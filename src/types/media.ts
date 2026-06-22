@@ -1,0 +1,73 @@
+export type MediaMetadata = {
+  formatName: string | null;
+  durationSeconds: number | null;
+  sizeBytes: number | null;
+  bitRate: number | null;
+  width: number | null;
+  height: number | null;
+  videoCodec: string | null;
+  audioCodec: string | null;
+  frameRate: string | null;
+  audioSampleRate: number | null;
+  audioChannels: number | null;
+};
+
+export type MediaAsset = {
+  id: string;
+  kind: "upload" | "output";
+  storageDriver?: "local" | "r2";
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+  downloadUrl: string;
+  metadata: MediaMetadata | null;
+};
+
+export type NormalizeTargetPreset =
+  | "hd-720p"
+  | "match-largest"
+  | "match-smallest"
+  | "match-average";
+
+export type NormalizeTargetProfile = {
+  preset: NormalizeTargetPreset;
+  width: number;
+  height: number;
+  frameRate: number;
+  audioSampleRate: number;
+  audioChannels: number;
+  videoCodec: "h264";
+  audioCodec: "aac";
+};
+
+export type ProcessingJob = {
+  id: string;
+  type: "trim" | "merge" | "normalize";
+  status: "queued" | "processing" | "completed" | "failed";
+  sourceAssetIds: string[];
+  outputAssetId: string | null;
+  downloadUrl: string | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+  options: {
+    assetId?: string;
+    startTime?: number;
+    endTime?: number;
+    sourceAssetIds?: string[];
+    target?: NormalizeTargetProfile;
+  };
+};
+
+export type HealthResponse = {
+  status: string;
+  service: string;
+  redis?: string;
+  storageDriver?: "local" | "r2";
+  objectStorage?: "ok" | "error" | "skipped";
+  objectStorageBucket?: string | null;
+  objectStorageMessage?: string | null;
+  workerMode?: "embedded" | "external";
+  timestamp: string;
+};
