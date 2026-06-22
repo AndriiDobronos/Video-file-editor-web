@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Video File Editor Web
 
-## Getting Started
+Video File Editor Web is the user-facing workspace for uploading, trimming, normalizing, merging, and downloading video files.
 
-First, run the development server:
+## What users can do
+
+- Upload one clip or a full batch into one workspace
+- Review duration, resolution, size, and codec details before export
+- Trim a clip to an exact time range
+- Normalize clips when merge is blocked by mismatched formats
+- Merge prepared clips into one final video
+- Download finished results and remove files that are no longer needed
+
+## Recommended user flow
+
+1. Upload your source clips.
+2. Review the file details shown in the asset list.
+3. Trim any clip that needs a shorter export.
+4. If merge is blocked, run `Normalize for merge` with the preset that fits your goal.
+5. Merge the prepared clips.
+6. Download the finished result from the processing history.
+
+## Normalize presets
+
+- `Default 720p`: a stable all-purpose output size
+- `Match largest clip`: keeps the biggest selected frame
+- `Match smallest clip`: reduces everything to the smallest selected frame
+- `Match average size`: chooses a middle-ground canvas from the selected clips
+
+## Documentation
+
+- In the app: open `/docs`
+- From the main screen: use the `Read documentation` button or the top `Docs` link
+
+## Local development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Create `.env.local` when you want the frontend to talk to a deployed or local backend:
 
-## Learn More
+```env
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:4001
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Notes
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- The interface is written for end users first, while deeper implementation details live in the backend repo and project documentation.
+- The Next.js development indicator is disabled in `next.config.ts` so local review stays closer to the real product UI.

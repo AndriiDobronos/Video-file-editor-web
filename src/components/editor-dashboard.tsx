@@ -27,24 +27,24 @@ type JobResponse = {
 };
 
 const tools = [
-  "Trim clips by exact time range",
-  "Merge multiple uploads into one export",
-  "Inspect codec, duration, resolution, and bitrate with ffprobe",
-  "Queue FFmpeg jobs without leaving the browser workflow",
+  "Trim a clip to the exact start and end moment you need",
+  "Merge prepared clips into one clean final export",
+  "Review duration, resolution, size, and codec details before export",
+  "Download completed results from one shared workspace",
 ];
 
 const workflow = [
   {
     title: "Upload",
-    description: "Bring in one or many clips and store them in the backend workspace.",
+    description: "Add one clip or a full batch and keep everything ready in one place.",
   },
   {
-    title: "Inspect",
-    description: "Read metadata before export so you can make better trim and merge decisions.",
+    title: "Prepare",
+    description: "Review file details, trim key moments, and normalize clips when formats differ.",
   },
   {
-    title: "Process",
-    description: "Queue trim or merge jobs and fetch the finished file when the worker completes.",
+    title: "Export",
+    description: "Start processing, follow progress, and download finished results when they are ready.",
   },
 ];
 
@@ -325,7 +325,9 @@ export function EditorDashboard() {
   const [normalizePreset, setNormalizePreset] =
     useState<NormalizeTargetPreset>("hd-720p");
   const [isMergeHelpOpen, setIsMergeHelpOpen] = useState(false);
-  const [feedback, setFeedback] = useState("Upload clips to start the first FFmpeg flow.");
+  const [feedback, setFeedback] = useState(
+    "Upload clips to start trimming, preparing, and exporting your project.",
+  );
   const [errorMessage, setErrorMessage] = useState("");
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
@@ -399,7 +401,7 @@ export function EditorDashboard() {
 
   async function handleRefresh() {
     try {
-      await ensureBackendReady("Waking the backend before refreshing the workspace.");
+      await ensureBackendReady("Preparing your workspace before refresh.");
       await Promise.all([loadAssets(), loadJobs()]);
       setErrorMessage("");
       setFeedback("Workspace refreshed.");
@@ -407,7 +409,7 @@ export function EditorDashboard() {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Could not refresh backend data.",
+          : "Could not refresh your files and processing history.",
       );
     }
   }
@@ -417,7 +419,7 @@ export function EditorDashboard() {
 
     async function loadInitialData() {
       try {
-        setFeedback("Waking the backend and loading the first workspace snapshot.");
+        setFeedback("Preparing your workspace and loading your latest files.");
 
         const nextHealth = (await waitForBackendWake()) as HealthResponse;
         const [nextAssets, nextJobs] = await Promise.all([
@@ -443,7 +445,7 @@ export function EditorDashboard() {
         setErrorMessage(
           error instanceof Error
             ? error.message
-            : "Could not reach the backend.",
+            : "Could not connect to the editing service.",
         );
       }
     }
@@ -498,7 +500,7 @@ export function EditorDashboard() {
     setErrorMessage("");
 
     try {
-      await ensureBackendReady("Waking the backend before uploading files.");
+      await ensureBackendReady("Preparing uploads.");
       const formData = new FormData();
 
       selectedFiles.forEach((file) => {
@@ -537,7 +539,7 @@ export function EditorDashboard() {
     setErrorMessage("");
 
     try {
-      await ensureBackendReady("Waking the backend before queueing a trim job.");
+      await ensureBackendReady("Preparing your trim request.");
       const response = await fetchJson<JobResponse>("/api/v1/jobs/trim", {
         method: "POST",
         headers: {
@@ -576,7 +578,7 @@ export function EditorDashboard() {
     setErrorMessage("");
 
     try {
-      await ensureBackendReady("Waking the backend before queueing a merge job.");
+      await ensureBackendReady("Preparing your merge request.");
       const response = await fetchJson<JobResponse>("/api/v1/jobs/merge", {
         method: "POST",
         headers: {
@@ -613,7 +615,7 @@ export function EditorDashboard() {
     setErrorMessage("");
 
     try {
-      await ensureBackendReady("Waking the backend before queueing normalize jobs.");
+      await ensureBackendReady("Preparing your clips for merge.");
 
       await Promise.all(
         selectedMergeAssets.map((asset) =>
@@ -656,7 +658,7 @@ export function EditorDashboard() {
     setErrorMessage("");
 
     try {
-      await ensureBackendReady("Waking the backend before deleting an asset.");
+      await ensureBackendReady("Preparing file removal.");
       const response = await fetchJson<{ message?: string }>(
         `/api/v1/assets/${asset.id}`,
         {
@@ -688,7 +690,7 @@ export function EditorDashboard() {
           <div className="space-y-8">
             <div className="inline-flex items-center gap-2 rounded-full border border-panel-border bg-white/70 px-4 py-2 text-sm text-muted">
               <span className="h-2.5 w-2.5 rounded-full bg-accent" />
-              Backend-driven FFmpeg editing workspace
+              Video editing workspace
             </div>
 
             <div className="space-y-5">
@@ -696,10 +698,10 @@ export function EditorDashboard() {
                 Video File Editor
               </p>
               <h1 className="max-w-3xl font-display text-5xl font-semibold leading-[0.95] tracking-tight sm:text-6xl lg:text-7xl">
-                Upload clips, inspect metadata, then run trim and merge jobs from one screen.
+                Prepare clips faster, keep exports organized, and finish every video from one workspace.
               </h1>
               <p className="max-w-2xl text-lg leading-8 text-muted sm:text-xl">
-                This first MVP connects the Next.js interface to a Fastify API with real ffprobe inspection and FFmpeg processing.
+                Upload files, review their details, trim key moments, normalize mixed formats, merge finished clips, and download the results when they are ready.
               </p>
             </div>
 
@@ -711,12 +713,10 @@ export function EditorDashboard() {
                 Open workspace
               </a>
               <a
-                href={toApiUrl("/health")}
+                href="/docs"
                 className="rounded-full border border-panel-border bg-white/80 px-6 py-3 text-center text-sm font-semibold text-foreground transition-colors duration-200 hover:bg-white"
-                target="_blank"
-                rel="noreferrer"
               >
-                Open health endpoint
+                Read documentation
               </a>
             </div>
           </div>
@@ -726,17 +726,19 @@ export function EditorDashboard() {
               <div className="mb-4 flex items-center justify-between gap-4">
                 <div>
                   <p className="text-sm uppercase tracking-[0.22em] text-white/45">
-                    API status
+                    Workspace status
                   </p>
                   <p className="mt-1 text-lg font-semibold">
-                    {health?.service ?? "Waiting for backend"}
+                    {health?.status === "ok" ? "Ready to edit" : "Starting up"}
                   </p>
                   <p className="mt-2 text-sm text-white/60">
-                    {health?.workerMode ?? "pending worker"} worker / {health?.storageDriver ?? "pending storage"}
+                    {health?.status === "ok"
+                      ? "Uploads, trims, merges, and downloads are available."
+                      : "Please wait a moment while the workspace wakes up."}
                   </p>
                 </div>
                 <div className="rounded-full bg-[#ff6b2c] px-3 py-1 text-xs font-semibold text-black">
-                  {health?.status ?? "offline"}
+                  {health?.status === "ok" ? "online" : "warming up"}
                 </div>
               </div>
 
@@ -776,13 +778,13 @@ export function EditorDashboard() {
       <section id="workspace" className="grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
         <div className="glass-panel rounded-[2rem] p-6 sm:p-8">
           <p className="font-display text-sm font-semibold uppercase tracking-[0.24em] text-muted">
-            First live flow
+            Editing flow
           </p>
           <h2 className="mt-4 font-display text-3xl font-semibold leading-tight sm:text-4xl">
-            Frontend for control, backend for storage, probing, queueing, and FFmpeg execution.
+            Everything you need to prepare clips and export a clean final result.
           </h2>
           <p className="mt-4 max-w-xl text-base leading-7 text-muted">
-            The current build already covers upload, metadata inspection, trim, merge, job polling, and download links for completed exports.
+            Use one page to upload assets, review file details, trim clips, normalize mismatched formats, merge results, and keep completed exports easy to find.
           </p>
 
           <div className="mt-6 rounded-[1.5rem] bg-white/75 p-5">
@@ -814,7 +816,7 @@ export function EditorDashboard() {
               <p className="font-display text-sm font-semibold uppercase tracking-[0.24em] text-muted">
                 Upload media
               </p>
-              <h2 className="mt-3 text-2xl font-semibold">Send clips to the API workspace</h2>
+              <h2 className="mt-3 text-2xl font-semibold">Add clips to your workspace</h2>
             </div>
             <div className="rounded-full bg-accent-soft px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#8f3b13]">
               Step 1
@@ -967,7 +969,7 @@ export function EditorDashboard() {
               <p className="font-display text-sm font-semibold uppercase tracking-[0.24em] text-muted">
                 Trim job
               </p>
-              <h2 className="mt-3 text-2xl font-semibold">Create a precise clip extract</h2>
+              <h2 className="mt-3 text-2xl font-semibold">Cut one clip to the exact moment range</h2>
             </div>
             <div className="rounded-full bg-accent-soft px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#8f3b13]">
               Step 2A
@@ -1050,7 +1052,7 @@ export function EditorDashboard() {
               <p className="font-display text-sm font-semibold uppercase tracking-[0.24em] text-muted">
                 Merge job
               </p>
-              <h2 className="mt-3 text-2xl font-semibold">Combine uploaded clips into one export</h2>
+              <h2 className="mt-3 text-2xl font-semibold">Combine prepared clips into one final video</h2>
             </div>
             <div className="rounded-full bg-accent-soft px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#8f3b13]">
               Step 2B
@@ -1205,9 +1207,9 @@ export function EditorDashboard() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="font-display text-sm font-semibold uppercase tracking-[0.24em] text-muted">
-              Job queue
+              Processing history
             </p>
-            <h2 className="mt-3 text-2xl font-semibold">Watch processing and download finished exports</h2>
+            <h2 className="mt-3 text-2xl font-semibold">Track progress and download finished results</h2>
           </div>
           <div className="rounded-full bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted">
             Step 3
