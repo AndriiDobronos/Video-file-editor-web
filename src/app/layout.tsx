@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { DM_Sans, Space_Grotesk } from "next/font/google";
+import { AppNav } from "@/components/app-nav";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -15,7 +16,8 @@ const spaceGrotesk = Space_Grotesk({
 
 export const metadata: Metadata = {
   title: "Video File Editor",
-  description: "A modern workspace for uploading, trimming, normalizing, merging, and downloading video files.",
+  description:
+    "A multi-page workspace for uploading files, choosing one editing function at a time, and exporting finished results.",
 };
 
 export default function RootLayout({
@@ -35,20 +37,7 @@ export default function RootLayout({
               Video File Editor
             </Link>
 
-            <nav className="flex items-center gap-2">
-              <Link
-                href="/"
-                className="rounded-full border border-panel-border bg-white/80 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-white"
-              >
-                Workspace
-              </Link>
-              <Link
-                href="/docs"
-                className="rounded-full border border-panel-border bg-white/80 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-white"
-              >
-                Docs
-              </Link>
-            </nav>
+            <AppNav />
           </div>
         </header>
 

@@ -1,8 +1,17 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { fetchJson, toApiUrl, waitForBackendWake } from "@/lib/api";
+import {
+  editorViewMeta,
+  functionRouteOptions,
+  type EditorView,
+} from "@/lib/function-routes";
 import type {
+  ConvertImageFit,
+  ConvertImageFormat,
+  ConvertImageTarget,
   HealthResponse,
   MediaAsset,
   NormalizeTargetPreset,
@@ -26,25 +35,80 @@ type JobResponse = {
   item: ProcessingJob;
 };
 
-const tools = [
-  "Trim a clip to the exact start and end moment you need",
-  "Merge prepared clips into one clean final export",
-  "Review duration, resolution, size, and codec details before export",
-  "Download completed results from one shared workspace",
+const statusHighlights = [
+  "Shared uploads stay available on every function page",
+  "Each tool now opens on its own route instead of one long scroll",
+  "Queue history stays separate so production work feels cleaner",
 ];
 
-const workflow = [
+const normalizeTargetPresetOptions: Array<{
+  value: NormalizeTargetPreset;
+  label: string;
+  description: string;
+}> = [
   {
-    title: "Upload",
-    description: "Add one clip or a full batch and keep everything ready in one place.",
+    value: "hd-720p",
+    label: "Default 720p (Recommended)",
+    description: "Converts every selected clip to a stable 1280x720 export profile.",
   },
   {
-    title: "Prepare",
-    description: "Review file details, trim key moments, and normalize clips when formats differ.",
+    value: "match-largest",
+    label: "Match largest clip",
+    description: "Keeps the biggest selected canvas and scales smaller clips into it.",
   },
   {
-    title: "Export",
-    description: "Start processing, follow progress, and download finished results when they are ready.",
+    value: "match-smallest",
+    label: "Match smallest clip",
+    description: "Downscales larger clips to the smallest selected canvas.",
+  },
+  {
+    value: "match-average",
+    label: "Match average size",
+    description: "Builds a middle-ground canvas from the selected clip dimensions.",
+  },
+];
+
+const convertFormatOptions: Array<{
+  value: ConvertImageFormat;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "png",
+    label: "PNG",
+    description: "Good for crisp graphics and transparent backgrounds.",
+  },
+  {
+    value: "jpeg",
+    label: "JPEG",
+    description: "Best when you want a smaller photo-friendly output.",
+  },
+  {
+    value: "webp",
+    label: "WebP",
+    description: "A modern web format with strong size savings.",
+  },
+];
+
+const convertFitOptions: Array<{
+  value: ConvertImageFit;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "contain",
+    label: "Contain",
+    description: "Keep the full image inside the target area.",
+  },
+  {
+    value: "cover",
+    label: "Cover",
+    description: "Fill the target area and crop the overflow.",
+  },
+  {
+    value: "stretch",
+    label: "Stretch",
+    description: "Force the image to the exact size.",
   },
 ];
 
@@ -87,32 +151,18 @@ const mergeCompatibilityChecks: MergeCompatibilityCheck[] = [
   },
 ];
 
-const normalizeTargetPresetOptions: Array<{
-  value: NormalizeTargetPreset;
-  label: string;
-  description: string;
-}> = [
-  {
-    value: "hd-720p",
-    label: "Default 720p (Recommended)",
-    description: "Converts every selected clip to a stable 1280x720 export profile.",
-  },
-  {
-    value: "match-largest",
-    label: "Match largest clip",
-    description: "Keeps the biggest selected canvas and scales smaller clips into it.",
-  },
-  {
-    value: "match-smallest",
-    label: "Match smallest clip",
-    description: "Downscales larger clips to the smallest selected canvas.",
-  },
-  {
-    value: "match-average",
-    label: "Match average size",
-    description: "Builds a middle-ground canvas from the selected clip dimensions.",
-  },
-];
+const sessionStorageKeys = {
+  trimAssetId: "vfe:trim-asset-id",
+  mergeAssetIds: "vfe:merge-asset-ids",
+  normalizePreset: "vfe:normalize-preset",
+  convertAssetId: "vfe:convert-asset-id",
+  convertFormat: "vfe:convert-format",
+  convertQuality: "vfe:convert-quality",
+  convertWidth: "vfe:convert-width",
+  convertHeight: "vfe:convert-height",
+  convertFit: "vfe:convert-fit",
+  convertBackground: "vfe:convert-background",
+} as const;
 
 function formatBytes(bytes: number | null | undefined) {
   if (!bytes || Number.isNaN(bytes)) {
@@ -181,43 +231,6 @@ function formatAssetSummary(asset: MediaAsset) {
   return details.join(" | ");
 }
 
-function AssetThumbnail({
-  asset,
-  compact = false,
-}: {
-  asset: MediaAsset;
-  compact?: boolean;
-}) {
-  return (
-    <div
-      className={
-        compact
-          ? "h-14 w-20 overflow-hidden rounded-[0.9rem] bg-[#111111] sm:h-16 sm:w-24"
-          : "h-20 w-full overflow-hidden rounded-[1rem] bg-[#111111] sm:h-24 sm:w-36"
-      }
-    >
-      {asset.thumbnailUrl ? (
-        <img
-          src={toApiUrl(asset.thumbnailUrl)}
-          alt={`${asset.originalName} preview`}
-          className="h-full w-full object-cover"
-          loading="lazy"
-        />
-      ) : (
-        <div
-          className={
-            compact
-              ? "flex h-full w-full items-center justify-center bg-[#181818] px-2 text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-white/70"
-              : "flex h-full w-full items-center justify-center bg-[#181818] px-3 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70"
-          }
-        >
-          {asset.kind}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function formatStatusLabel(status: ProcessingJob["status"]) {
   switch (status) {
     case "queued":
@@ -231,6 +244,37 @@ function formatStatusLabel(status: ProcessingJob["status"]) {
     default:
       return status;
   }
+}
+
+function formatJobProgress(progress: ProcessingJob["progress"]) {
+  if (typeof progress === "number") {
+    return `${Math.round(progress)}%`;
+  }
+
+  if (typeof progress === "string") {
+    return progress;
+  }
+
+  if (progress === true) {
+    return "Running";
+  }
+
+  return null;
+}
+
+function isImageAsset(asset: MediaAsset) {
+  return asset.mimeType.toLowerCase().startsWith("image/");
+}
+
+function isVideoAsset(asset: MediaAsset) {
+  if (isImageAsset(asset)) {
+    return false;
+  }
+
+  return (
+    asset.mimeType.toLowerCase().startsWith("video/") ||
+    Boolean(asset.metadata?.videoCodec)
+  );
 }
 
 function getSuggestedTrimEndTime(asset: MediaAsset | undefined) {
@@ -370,6 +414,102 @@ function formatNormalizeTarget(target: NormalizeTargetProfile | null) {
   return `${target.width}x${target.height} | H.264/AAC | ${target.frameRate} fps | ${target.audioSampleRate / 1000} kHz stereo`;
 }
 
+function parseOptionalPositiveInteger(value: string) {
+  if (!value.trim()) {
+    return { value: undefined, error: null };
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return {
+      value: undefined,
+      error: "Width, height, and quality must use positive whole numbers.",
+    };
+  }
+
+  return { value: parsed, error: null };
+}
+
+function buildConvertTargetPlan(input: {
+  format: ConvertImageFormat;
+  quality: string;
+  width: string;
+  height: string;
+  fit: ConvertImageFit;
+  background: string;
+}) {
+  const qualityResult = parseOptionalPositiveInteger(input.quality);
+  const widthResult = parseOptionalPositiveInteger(input.width);
+  const heightResult = parseOptionalPositiveInteger(input.height);
+
+  const errorMessage =
+    qualityResult.error ?? widthResult.error ?? heightResult.error ?? null;
+
+  if (errorMessage) {
+    return {
+      target: null,
+      errorMessage,
+    };
+  }
+
+  const background = input.background.trim();
+
+  if (background && !/^#[0-9a-fA-F]{6}$/.test(background)) {
+    return {
+      target: null,
+      errorMessage: "Background must use a six-digit hex color such as #ffffff.",
+    };
+  }
+
+  const target: ConvertImageTarget = {
+    format: input.format,
+    fit: input.fit,
+  };
+
+  if (input.format !== "png" && qualityResult.value) {
+    target.quality = qualityResult.value;
+  }
+
+  if (widthResult.value) {
+    target.width = widthResult.value;
+  }
+
+  if (heightResult.value) {
+    target.height = heightResult.value;
+  }
+
+  if (background) {
+    target.background = background;
+  }
+
+  return {
+    target,
+    errorMessage: null,
+  };
+}
+
+function formatConvertTargetSummary(target: ConvertImageTarget | null) {
+  if (!target) {
+    return "Target is unavailable.";
+  }
+
+  const details = [
+    target.format.toUpperCase(),
+    target.width && target.height
+      ? `${target.width}x${target.height}`
+      : target.width
+        ? `${target.width}px wide`
+        : target.height
+          ? `${target.height}px high`
+          : "Keep original size",
+    target.fit ? `Fit: ${target.fit}` : null,
+    target.quality ? `Quality: ${target.quality}` : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return details.join(" | ");
+}
+
 function getJobTypeLabel(type: ProcessingJob["type"]) {
   switch (type) {
     case "trim":
@@ -378,25 +518,199 @@ function getJobTypeLabel(type: ProcessingJob["type"]) {
       return "Merge job";
     case "normalize":
       return "Normalize job";
+    case "convert-image":
+      return "Convert image job";
     default:
       return type;
   }
 }
 
-export function EditorDashboard() {
+function readSessionString(key: string, fallback: string) {
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+
+  return window.sessionStorage.getItem(key) ?? fallback;
+}
+
+function readSessionStringArray(key: string) {
+  if (typeof window === "undefined") {
+    return [] as string[];
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(key);
+    return rawValue ? (JSON.parse(rawValue) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function AssetThumbnail({
+  asset,
+  compact = false,
+}: {
+  asset: MediaAsset;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={
+        compact
+          ? "h-14 w-20 overflow-hidden rounded-[0.9rem] bg-[#111111] sm:h-16 sm:w-24"
+          : "h-20 w-full overflow-hidden rounded-[1rem] bg-[#111111] sm:h-24 sm:w-36"
+      }
+    >
+      {asset.thumbnailUrl ? (
+        <img
+          src={toApiUrl(asset.thumbnailUrl)}
+          alt={`${asset.originalName} preview`}
+          className="h-full w-full object-cover"
+          loading="lazy"
+        />
+      ) : (
+        <div
+          className={
+            compact
+              ? "flex h-full w-full items-center justify-center bg-[#181818] px-2 text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-white/70"
+              : "flex h-full w-full items-center justify-center bg-[#181818] px-3 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70"
+          }
+        >
+          {asset.kind}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SelectableAssetCard({
+  asset,
+  selected,
+  inputType,
+  inputName,
+  onSelect,
+}: {
+  asset: MediaAsset;
+  selected: boolean;
+  inputType: "radio" | "checkbox";
+  inputName?: string;
+  onSelect: () => void;
+}) {
+  return (
+    <label className="flex items-center gap-3 rounded-[1.25rem] border border-panel-border bg-white/78 px-3 py-3">
+      <input
+        type={inputType}
+        name={inputName}
+        checked={selected}
+        onChange={onSelect}
+        className="h-4 w-4 shrink-0"
+      />
+      <AssetThumbnail asset={asset} compact />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="truncate text-sm font-semibold text-foreground">{asset.originalName}</p>
+          {selected ? (
+            <span className="rounded-full bg-[#111111] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
+              Selected
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-1 truncate text-[11px] uppercase tracking-[0.14em] text-muted">
+          {asset.metadata?.formatName ?? asset.mimeType}
+        </p>
+        <p className="mt-1 text-xs leading-5 text-muted">{formatAssetSummary(asset)}</p>
+      </div>
+    </label>
+  );
+}
+
+function PanelHeader({
+  eyebrow,
+  title,
+  badge,
+}: {
+  eyebrow: string;
+  title: string;
+  badge?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div>
+        <p className="font-display text-sm font-semibold uppercase tracking-[0.24em] text-muted">
+          {eyebrow}
+        </p>
+        <h2 className="mt-3 text-2xl font-semibold">{title}</h2>
+      </div>
+      {badge ? (
+        <div className="rounded-full bg-accent-soft px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#8f3b13]">
+          {badge}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function EditorDashboard({
+  activeView = "workspace",
+}: {
+  activeView?: EditorView;
+}) {
+  const activeRouteChipClasses =
+    "border-[#2f2f2f] bg-[#2f2f2f] text-[#f8f5ef] shadow-[0_12px_30px_rgba(17,17,17,0.14)]";
+  const idleRouteChipClasses =
+    "border-panel-border bg-white/80 text-foreground hover:bg-white";
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [assets, setAssets] = useState<MediaAsset[]>([]);
   const [jobs, setJobs] = useState<ProcessingJob[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [trimAssetId, setTrimAssetId] = useState("");
+  const [trimAssetId, setTrimAssetId] = useState(() =>
+    readSessionString(sessionStorageKeys.trimAssetId, ""),
+  );
   const [trimStartTime, setTrimStartTime] = useState("0");
   const [trimEndTime, setTrimEndTime] = useState("5");
-  const [mergeAssetIds, setMergeAssetIds] = useState<string[]>([]);
+  const [mergeAssetIds, setMergeAssetIds] = useState<string[]>(() =>
+    readSessionStringArray(sessionStorageKeys.mergeAssetIds),
+  );
   const [normalizePreset, setNormalizePreset] =
-    useState<NormalizeTargetPreset>("hd-720p");
+    useState<NormalizeTargetPreset>(
+      () =>
+        (readSessionString(
+          sessionStorageKeys.normalizePreset,
+          "hd-720p",
+        ) as NormalizeTargetPreset),
+    );
   const [isMergeHelpOpen, setIsMergeHelpOpen] = useState(false);
+  const [convertAssetId, setConvertAssetId] = useState(() =>
+    readSessionString(sessionStorageKeys.convertAssetId, ""),
+  );
+  const [convertFormat, setConvertFormat] = useState<ConvertImageFormat>(
+    () =>
+      readSessionString(
+        sessionStorageKeys.convertFormat,
+        "webp",
+      ) as ConvertImageFormat,
+  );
+  const [convertQuality, setConvertQuality] = useState(() =>
+    readSessionString(sessionStorageKeys.convertQuality, "92"),
+  );
+  const [convertWidth, setConvertWidth] = useState(() =>
+    readSessionString(sessionStorageKeys.convertWidth, ""),
+  );
+  const [convertHeight, setConvertHeight] = useState(() =>
+    readSessionString(sessionStorageKeys.convertHeight, ""),
+  );
+  const [convertFit, setConvertFit] = useState<ConvertImageFit>(
+    () =>
+      readSessionString(
+        sessionStorageKeys.convertFit,
+        "contain",
+      ) as ConvertImageFit,
+  );
+  const [convertBackground, setConvertBackground] = useState(() =>
+    readSessionString(sessionStorageKeys.convertBackground, "#ffffff"),
+  );
   const [feedback, setFeedback] = useState(
-    "Upload clips to start trimming, preparing, and exporting your project.",
+    "Upload files once, then open only the function page you need for the next step.",
   );
   const [errorMessage, setErrorMessage] = useState("");
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -406,7 +720,11 @@ export function EditorDashboard() {
   const hasProcessingJobs = jobs.some(
     (job) => job.status === "queued" || job.status === "processing",
   );
-  const selectedMergeAssets = assets.filter((asset) => mergeAssetIds.includes(asset.id));
+  const videoAssets = assets.filter(isVideoAsset);
+  const imageAssets = assets.filter(isImageAsset);
+  const selectedMergeAssets = videoAssets.filter((asset) =>
+    mergeAssetIds.includes(asset.id),
+  );
   const mergeCompatibilityIssues = getMergeCompatibilityIssues(selectedMergeAssets);
   const mergeRequiresNormalization = mergeCompatibilityIssues.length > 0;
   const normalizeTargetPlan = buildNormalizeTargetPlan(
@@ -417,32 +735,60 @@ export function EditorDashboard() {
   const selectedNormalizePreset = normalizeTargetPresetOptions.find(
     (option) => option.value === normalizePreset,
   );
+  const convertTargetPlan = buildConvertTargetPlan({
+    format: convertFormat,
+    quality: convertQuality,
+    width: convertWidth,
+    height: convertHeight,
+    fit: convertFit,
+    background: convertBackground,
+  });
+  const selectedConvertAsset =
+    imageAssets.find((asset) => asset.id === convertAssetId) ?? null;
+  const currentViewMeta = editorViewMeta[activeView];
 
   function applyAssetsSnapshot(nextAssets: MediaAsset[]) {
     startRefreshTransition(() => {
       setAssets(nextAssets);
 
+      const nextVideoAssets = nextAssets.filter(isVideoAsset);
+      const nextImageAssets = nextAssets.filter(isImageAsset);
+
       if (nextAssets.length === 0) {
         setTrimAssetId("");
         setTrimEndTime("5");
         setMergeAssetIds([]);
+        setConvertAssetId("");
         return;
       }
 
-      const hasSelectedTrimAsset = nextAssets.some((asset) => asset.id === trimAssetId);
+      const hasSelectedTrimAsset = nextVideoAssets.some(
+        (asset) => asset.id === trimAssetId,
+      );
 
       if (!hasSelectedTrimAsset) {
-        setTrimAssetId(nextAssets[0].id);
-        setTrimEndTime(getSuggestedTrimEndTime(nextAssets[0]));
+        const nextTrimAsset = nextVideoAssets[0];
+        setTrimAssetId(nextTrimAsset?.id ?? "");
+        setTrimEndTime(getSuggestedTrimEndTime(nextTrimAsset));
       }
 
       setMergeAssetIds((current) => {
         const filtered = current.filter((assetId) =>
-          nextAssets.some((asset) => asset.id === assetId),
+          nextVideoAssets.some((asset) => asset.id === assetId),
         );
 
-        return filtered.length > 0 ? filtered : getDefaultMergeSelection(nextAssets);
+        return filtered.length > 0
+          ? filtered
+          : getDefaultMergeSelection(nextVideoAssets);
       });
+
+      const hasSelectedConvertAsset = nextImageAssets.some(
+        (asset) => asset.id === convertAssetId,
+      );
+
+      if (!hasSelectedConvertAsset) {
+        setConvertAssetId(nextImageAssets[0]?.id ?? "");
+      }
     });
   }
 
@@ -471,7 +817,7 @@ export function EditorDashboard() {
 
   async function handleRefresh() {
     try {
-      await ensureBackendReady("Preparing your workspace before refresh.");
+      await ensureBackendReady("Refreshing uploads and queue history.");
       await Promise.all([loadAssets(), loadJobs()]);
       setErrorMessage("");
       setFeedback("Workspace refreshed.");
@@ -489,7 +835,7 @@ export function EditorDashboard() {
 
     async function loadInitialData() {
       try {
-        setFeedback("Preparing your workspace and loading your latest files.");
+        setFeedback("Preparing your workspace and loading the latest files.");
 
         const nextHealth = (await waitForBackendWake()) as HealthResponse;
         const [nextAssets, nextJobs] = await Promise.all([
@@ -560,6 +906,55 @@ export function EditorDashboard() {
     }
   }, [mergeRequiresNormalization]);
 
+  useEffect(() => {
+    window.sessionStorage.setItem(sessionStorageKeys.trimAssetId, trimAssetId);
+  }, [trimAssetId]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(
+      sessionStorageKeys.mergeAssetIds,
+      JSON.stringify(mergeAssetIds),
+    );
+  }, [mergeAssetIds]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(
+      sessionStorageKeys.normalizePreset,
+      normalizePreset,
+    );
+  }, [normalizePreset]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(sessionStorageKeys.convertAssetId, convertAssetId);
+  }, [convertAssetId]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(sessionStorageKeys.convertFormat, convertFormat);
+  }, [convertFormat]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(sessionStorageKeys.convertQuality, convertQuality);
+  }, [convertQuality]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(sessionStorageKeys.convertWidth, convertWidth);
+  }, [convertWidth]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(sessionStorageKeys.convertHeight, convertHeight);
+  }, [convertHeight]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(sessionStorageKeys.convertFit, convertFit);
+  }, [convertFit]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(
+      sessionStorageKeys.convertBackground,
+      convertBackground,
+    );
+  }, [convertBackground]);
+
   async function handleUpload() {
     if (selectedFiles.length === 0) {
       setErrorMessage("Choose at least one file before uploading.");
@@ -601,7 +996,7 @@ export function EditorDashboard() {
 
   async function handleTrimJob() {
     if (!trimAssetId) {
-      setErrorMessage("Upload a file and choose it for trimming first.");
+      setErrorMessage("Upload a video clip and choose it for trimming first.");
       return;
     }
 
@@ -633,13 +1028,13 @@ export function EditorDashboard() {
 
   async function handleMergeJob() {
     if (mergeAssetIds.length < 2) {
-      setErrorMessage("Select at least two uploaded files to merge.");
+      setErrorMessage("Select at least two video clips to merge.");
       return;
     }
 
     if (mergeRequiresNormalization) {
       setErrorMessage(
-        "Normalize the selected clips to the same format before merging. Match resolution, codecs, frame rate, and audio settings.",
+        "These clips still need normalization before merge. Open the Normalize page and align them first.",
       );
       return;
     }
@@ -715,6 +1110,44 @@ export function EditorDashboard() {
     }
   }
 
+  async function handleConvertJob() {
+    if (!convertAssetId) {
+      setErrorMessage("Choose an uploaded image before creating a convert job.");
+      return;
+    }
+
+    if (!convertTargetPlan.target) {
+      setErrorMessage(
+        convertTargetPlan.errorMessage ?? "Convert target could not be prepared.",
+      );
+      return;
+    }
+
+    setBusyAction("convert");
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Preparing your image conversion request.");
+      const response = await fetchJson<JobResponse>("/api/v1/jobs/convert-image", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          assetId: convertAssetId,
+          target: convertTargetPlan.target,
+        }),
+      });
+
+      await loadJobs();
+      setFeedback(`Convert job ${response.item.id.slice(0, 8)} has been queued.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Convert job failed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   async function handleDeleteAsset(asset: MediaAsset) {
     const confirmed = window.confirm(
       `Delete "${asset.originalName}" from ${asset.storageDriver ?? "local"} storage?`,
@@ -753,28 +1186,616 @@ export function EditorDashboard() {
     );
   }
 
+  function renderWorkspaceOverviewPanel() {
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Function launcher"
+          title="Choose one action and jump straight to it"
+          badge="Overview"
+        />
+
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+          {functionRouteOptions.map((item) => (
+            <Link
+              key={item.view}
+              href={item.href}
+              className="rounded-[1.4rem] border border-panel-border bg-white/82 p-5 transition hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(17,17,17,0.08)]"
+            >
+              <p className="text-lg font-semibold text-foreground">{item.label}</p>
+              <p className="mt-2 text-sm leading-6 text-muted">{item.description}</p>
+            </Link>
+          ))}
+
+          <Link
+            href="/jobs"
+            className="rounded-[1.4rem] border border-panel-border bg-[#111111] p-5 text-white transition hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(17,17,17,0.14)]"
+          >
+            <p className="text-lg font-semibold">Open jobs queue</p>
+            <p className="mt-2 text-sm leading-6 text-white/70">
+              Review processing history, track current jobs, and download finished results without leaving the shared upload space.
+            </p>
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
+  function renderTrimPanel() {
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Trim function"
+          title="Cut one clip to the exact moment range"
+          badge="Function"
+        />
+
+        <div className="mt-6 space-y-4">
+          {videoAssets.length > 0 ? (
+            <div className="grid max-h-[18rem] gap-3 overflow-y-auto pr-1">
+              {videoAssets.map((asset) => (
+                <SelectableAssetCard
+                  key={asset.id}
+                  asset={asset}
+                  selected={trimAssetId === asset.id}
+                  inputType="radio"
+                  inputName="trim-asset"
+                  onSelect={() => {
+                    setTrimAssetId(asset.id);
+                    setTrimEndTime(getSuggestedTrimEndTime(asset));
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+              Upload a video clip to enable trim.
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Start time (seconds)
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={trimStartTime}
+                onChange={(event) => {
+                  setTrimStartTime(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              End time (seconds)
+              <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                value={trimEndTime}
+                onChange={(event) => {
+                  setTrimEndTime(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              void handleTrimJob();
+            }}
+            disabled={busyAction === "trim" || !trimAssetId}
+            className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busyAction === "trim" ? "Queueing trim..." : "Queue trim job"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  function renderMergePanel() {
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Merge function"
+          title="Combine prepared clips into one final video"
+          badge="Function"
+        />
+
+        <div className="mt-6 space-y-4">
+          {videoAssets.length > 0 ? (
+            <div className="grid max-h-[18rem] gap-3 overflow-y-auto pr-1">
+              {videoAssets.map((asset) => (
+                <SelectableAssetCard
+                  key={asset.id}
+                  asset={asset}
+                  selected={mergeAssetIds.includes(asset.id)}
+                  inputType="checkbox"
+                  onSelect={() => {
+                    toggleMergeAsset(asset.id);
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+              Upload at least two video clips to enable merge.
+            </div>
+          )}
+
+          {mergeRequiresNormalization ? (
+            <div className="rounded-[1.5rem] bg-[#fff1ea] px-4 py-4 text-[#8f3b13]">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold">
+                  Merge is blocked until the selected clips share one format.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMergeHelpOpen((current) => !current);
+                  }}
+                  aria-expanded={isMergeHelpOpen}
+                  aria-label="Toggle merge details"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-[#e8b39a] bg-white text-sm font-semibold text-[#8f3b13] transition hover:bg-[#fff8f4]"
+                >
+                  i
+                </button>
+              </div>
+
+              {isMergeHelpOpen ? (
+                <div className="mt-3 text-sm leading-6">
+                  <p>
+                    Open the dedicated Normalize page to align resolution, codecs, frame rate, and audio settings before merging.
+                  </p>
+                  {mergeCompatibilityIssues.map((issue) => (
+                    <p key={issue} className="mt-2">
+                      {issue}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="mt-4">
+                <Link
+                  href="/functions/normalize"
+                  className="rounded-full border border-[#e8b39a] bg-white px-4 py-2 text-sm font-semibold text-[#8f3b13]"
+                >
+                  Open normalize page
+                </Link>
+              </div>
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              void handleMergeJob();
+            }}
+            disabled={
+              busyAction === "merge" ||
+              mergeAssetIds.length < 2 ||
+              mergeRequiresNormalization
+            }
+            className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busyAction === "merge" ? "Queueing merge..." : "Queue merge job"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  function renderNormalizePanel() {
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Normalize function"
+          title="Align clips before you merge them"
+          badge="Function"
+        />
+
+        <div className="mt-6 space-y-4">
+          {videoAssets.length > 0 ? (
+            <div className="grid max-h-[16rem] gap-3 overflow-y-auto pr-1">
+              {videoAssets.map((asset) => (
+                <SelectableAssetCard
+                  key={asset.id}
+                  asset={asset}
+                  selected={mergeAssetIds.includes(asset.id)}
+                  inputType="checkbox"
+                  onSelect={() => {
+                    toggleMergeAsset(asset.id);
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+              Upload video clips to prepare a normalize batch.
+            </div>
+          )}
+
+          <div className="rounded-[1.5rem] bg-white/78 p-4">
+            <p className="text-sm font-semibold text-foreground">Target preset</p>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              {selectedNormalizePreset?.description ??
+                "Choose how the selected clips should be aligned before merge."}
+            </p>
+
+            <label className="mt-4 grid gap-2 text-sm font-medium text-foreground">
+              Preset
+              <select
+                value={normalizePreset}
+                onChange={(event) => {
+                  setNormalizePreset(event.target.value as NormalizeTargetPreset);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {normalizeTargetPresetOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-muted">Target canvas</p>
+                <p className="mt-2 text-sm font-semibold">
+                  {normalizeTarget
+                    ? `${normalizeTarget.width}x${normalizeTarget.height}`
+                    : "Unavailable"}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.16em] text-muted">Output profile</p>
+                <p className="mt-2 text-sm font-semibold">
+                  {formatNormalizeTarget(normalizeTarget)}
+                </p>
+              </div>
+            </div>
+
+            {normalizeTargetPlan.errorMessage ? (
+              <p className="mt-4 rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
+                {normalizeTargetPlan.errorMessage}
+              </p>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => {
+                void handleNormalizeJobs();
+              }}
+              disabled={busyAction === "normalize" || !normalizeTarget}
+              className="mt-4 rounded-full border border-panel-border bg-white px-5 py-3 text-sm font-semibold text-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busyAction === "normalize"
+                ? "Queueing normalize..."
+                : "Normalize selected clips"}
+            </button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  function renderConvertPanel() {
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Convert function"
+          title="Convert PNG, JPEG, and WebP files"
+          badge="Function"
+        />
+
+        <div className="mt-6 space-y-4">
+          {imageAssets.length > 0 ? (
+            <div className="grid max-h-[14rem] gap-3 overflow-y-auto pr-1">
+              {imageAssets.map((asset) => (
+                <SelectableAssetCard
+                  key={asset.id}
+                  asset={asset}
+                  selected={convertAssetId === asset.id}
+                  inputType="radio"
+                  inputName="convert-asset"
+                  onSelect={() => {
+                    setConvertAssetId(asset.id);
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+              Upload PNG, JPEG, or WebP files to enable image conversion.
+            </div>
+          )}
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Output format
+              <select
+                value={convertFormat}
+                onChange={(event) => {
+                  setConvertFormat(event.target.value as ConvertImageFormat);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {convertFormatOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Fit mode
+              <select
+                value={convertFit}
+                onChange={(event) => {
+                  setConvertFit(event.target.value as ConvertImageFit);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {convertFitOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Width (optional)
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={convertWidth}
+                onChange={(event) => {
+                  setConvertWidth(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Height (optional)
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={convertHeight}
+                onChange={(event) => {
+                  setConvertHeight(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+          </div>
+
+          {convertFormat !== "png" ? (
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Quality (1-100)
+              <input
+                type="number"
+                min="1"
+                max="100"
+                step="1"
+                value={convertQuality}
+                onChange={(event) => {
+                  setConvertQuality(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+          ) : null}
+
+          <label className="grid gap-2 text-sm font-medium text-foreground">
+            Background for JPEG or padded images
+            <input
+              type="text"
+              value={convertBackground}
+              onChange={(event) => {
+                setConvertBackground(event.target.value);
+              }}
+              className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+            />
+          </label>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Source</p>
+              <p className="mt-2 text-sm font-semibold">
+                {selectedConvertAsset?.originalName ?? "Choose an image"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Target summary</p>
+              <p className="mt-2 text-sm font-semibold">
+                {formatConvertTargetSummary(convertTargetPlan.target)}
+              </p>
+            </div>
+          </div>
+
+          {convertTargetPlan.errorMessage ? (
+            <p className="rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
+              {convertTargetPlan.errorMessage}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              void handleConvertJob();
+            }}
+            disabled={busyAction === "convert" || !convertAssetId || !convertTargetPlan.target}
+            className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busyAction === "convert" ? "Queueing convert..." : "Queue convert job"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  function renderJobsPanel() {
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Queue history"
+          title="Watch processing and download finished outputs"
+          badge="Jobs"
+        />
+
+        <div className="mt-6 grid max-h-[34rem] gap-4 overflow-y-auto pr-1">
+          {jobs.length > 0 ? (
+            jobs.map((job) => (
+              <article
+                key={job.id}
+                className="rounded-[1.5rem] border border-panel-border bg-white/78 p-5 shadow-sm"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-lg font-semibold">{getJobTypeLabel(job.type)}</p>
+                    <p className="mt-1 text-sm text-muted">
+                      {job.id} | {new Date(job.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="rounded-full bg-[#f8f5ef] px-4 py-2 text-sm font-semibold text-foreground">
+                    {formatStatusLabel(job.status)}
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Type</p>
+                    <p className="mt-2 text-sm font-semibold">{job.type}</p>
+                  </div>
+                  <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Sources</p>
+                    <p className="mt-2 text-sm font-semibold">{job.sourceAssetIds.length}</p>
+                  </div>
+                  <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Progress</p>
+                    <p className="mt-2 text-sm font-semibold">
+                      {formatJobProgress(job.progress) ?? "Waiting for update"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-3">
+                  {job.downloadUrl ? (
+                    <a
+                      href={toApiUrl(job.downloadUrl)}
+                      className="rounded-full border border-panel-border bg-white px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef]"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Download result
+                    </a>
+                  ) : null}
+
+                  {job.error ? (
+                    <p className="rounded-full bg-[#fff1ea] px-4 py-2 text-sm text-[#8f3b13]">
+                      {job.error}
+                    </p>
+                  ) : null}
+                </div>
+              </article>
+            ))
+          ) : (
+            <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+              No jobs queued yet. Open one function page, queue work there, then return here to watch the history.
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  }
+
+  function renderActivePanel() {
+    if (activeView === "trim") {
+      return renderTrimPanel();
+    }
+
+    if (activeView === "merge") {
+      return renderMergePanel();
+    }
+
+    if (activeView === "normalize") {
+      return renderNormalizePanel();
+    }
+
+    if (activeView === "convert") {
+      return renderConvertPanel();
+    }
+
+    if (activeView === "jobs") {
+      return renderJobsPanel();
+    }
+
+    return renderWorkspaceOverviewPanel();
+  }
+
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-10 px-5 py-6 sm:px-8 lg:px-10">
+    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-5 py-6 sm:px-8 lg:px-10">
       <section className="glass-panel overflow-hidden rounded-[2rem]">
-        <div className="grid gap-8 px-6 py-8 sm:px-8 lg:grid-cols-[1.2fr_0.9fr] lg:px-10 lg:py-10">
-          <div className="space-y-8">
+        <div className="grid gap-6 px-6 py-7 sm:px-8 lg:grid-cols-[1.2fr_0.9fr] lg:px-10">
+          <div className="space-y-6">
             <div className="inline-flex items-center gap-2 rounded-full border border-panel-border bg-white/70 px-4 py-2 text-sm text-muted">
               <span className="h-2.5 w-2.5 rounded-full bg-accent" />
-              Video editing workspace
+              {currentViewMeta.eyebrow}
             </div>
 
-            <div className="space-y-5">
+            <div className="space-y-4">
               <p className="font-display text-sm font-semibold uppercase tracking-[0.28em] text-muted">
-                Video File Editor
+                {currentViewMeta.label}
               </p>
-              <h1 className="max-w-3xl font-display text-5xl font-semibold leading-[0.95] tracking-tight sm:text-6xl lg:text-7xl">
-                Prepare clips faster, keep exports organized, and finish every video from one workspace.
+              <h1 className="max-w-3xl font-display text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
+                Choose one file action, open the right page, and stay focused on that job only.
               </h1>
-              <p className="max-w-2xl text-lg leading-8 text-muted sm:text-xl">
-                Upload files, review their details, trim key moments, normalize mixed formats, merge finished clips, and download the results when they are ready.
+              <p className="max-w-3xl text-base leading-8 text-muted sm:text-lg">
+                {currentViewMeta.description}
               </p>
             </div>
 
+            <div className="flex flex-wrap gap-2">
+              {functionRouteOptions.map((item) => {
+                const isActive = activeView === item.view;
+
+                return (
+                  <Link
+                    key={item.view}
+                    href={item.href}
+                    className={`relative rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                      isActive ? activeRouteChipClasses : idleRouteChipClasses
+                    }`}
+                  >
+                    <span className="relative z-10">{item.shortLabel}</span>
+                  </Link>
+                );
+              })}
+
+              <Link
+                href="/jobs"
+                className={`relative rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                  activeView === "jobs"
+                    ? activeRouteChipClasses
+                    : idleRouteChipClasses
+                }`}
+              >
+                <span className="relative z-10">Jobs</span>
+              </Link>
+            </div>
           </div>
 
           <div className="rounded-[1.75rem] bg-[#111111] p-4 text-white shadow-[0_30px_80px_rgba(17,17,17,0.22)]">
@@ -789,7 +1810,7 @@ export function EditorDashboard() {
                   </p>
                   <p className="mt-2 text-sm text-white/60">
                     {health?.status === "ok"
-                      ? "Uploads, trims, merges, and downloads are available."
+                      ? "Uploads and queue actions are available on every route."
                       : "Please wait a moment while the workspace wakes up."}
                   </p>
                 </div>
@@ -799,7 +1820,7 @@ export function EditorDashboard() {
               </div>
 
               <div className="space-y-3 rounded-[1.2rem] bg-white/6 p-4">
-                {tools.map((item) => (
+                {statusHighlights.map((item) => (
                   <div
                     key={item}
                     className="flex items-start gap-3 rounded-2xl border border-white/8 bg-black/20 px-4 py-3"
@@ -831,504 +1852,165 @@ export function EditorDashboard() {
         </div>
       </section>
 
-      <section id="workspace" className="grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
-        <div className="glass-panel rounded-[2rem] p-6 sm:p-8">
-          <p className="font-display text-sm font-semibold uppercase tracking-[0.24em] text-muted">
-            Editing flow
-          </p>
-          <h2 className="mt-4 font-display text-3xl font-semibold leading-tight sm:text-4xl">
-            Everything you need to prepare clips and export a clean final result.
-          </h2>
-          <p className="mt-4 max-w-xl text-base leading-7 text-muted">
-            Use one page to upload assets, review file details, trim clips, normalize mismatched formats, merge results, and keep completed exports easy to find.
-          </p>
-
-          <div className="mt-6 rounded-[1.5rem] bg-white/75 p-5">
-            <p className="text-sm font-semibold text-foreground">Current feedback</p>
-            <p className="mt-2 text-sm leading-6 text-muted">{feedback}</p>
+      <section className="grid gap-5 xl:grid-cols-[0.88fr_1.12fr]">
+        <div className="space-y-5">
+          <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+            <PanelHeader
+              eyebrow="Current feedback"
+              title="Shared workspace notes"
+              badge="Shared"
+            />
+            <p className="mt-5 text-sm leading-7 text-muted">{feedback}</p>
             {errorMessage ? (
-              <p className="mt-3 rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
+              <p className="mt-4 rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
                 {errorMessage}
               </p>
             ) : null}
-          </div>
-        </div>
+          </section>
 
-        <div className="grid gap-5 sm:grid-cols-3">
-          {workflow.map((step, index) => (
-            <article key={step.title} className="glass-panel rounded-[2rem] p-6">
-              <p className="font-display text-5xl font-semibold text-accent">0{index + 1}</p>
-              <h3 className="mt-5 text-xl font-semibold">{step.title}</h3>
-              <p className="mt-3 text-sm leading-6 text-muted">{step.description}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="glass-panel rounded-[2rem] p-6 sm:p-8">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="font-display text-sm font-semibold uppercase tracking-[0.24em] text-muted">
-                Upload media
-              </p>
-              <h2 className="mt-3 text-2xl font-semibold">Add clips to your workspace</h2>
-            </div>
-            <div className="rounded-full bg-accent-soft px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#8f3b13]">
-              Step 1
-            </div>
-          </div>
-
-          <div className="mt-6 rounded-[1.5rem] border border-dashed border-panel-border bg-white/70 p-5">
-            <input
-              key={fileInputKey}
-              type="file"
-              multiple
-              accept="video/*,audio/*,image/*"
-              onChange={(event) => {
-                setSelectedFiles(Array.from(event.target.files ?? []));
-              }}
-              className="block w-full text-sm text-muted file:mr-4 file:rounded-full file:border-0 file:bg-foreground file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
+          <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+            <PanelHeader
+              eyebrow="Upload media"
+              title="Add files once and use them on every function page"
+              badge="Shared"
             />
 
-            <div className="mt-4 flex flex-wrap gap-2">
-              {selectedFiles.length > 0 ? (
-                selectedFiles.map((file) => (
-                  <span
-                    key={`${file.name}-${file.lastModified}`}
-                    className="rounded-full bg-white px-3 py-2 text-xs font-medium text-foreground shadow-sm"
-                  >
-                    {file.name}
-                  </span>
-                ))
-              ) : (
-                <span className="text-sm text-muted">
-                  No files selected yet.
-                </span>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                void handleUpload();
-              }}
-              disabled={busyAction === "upload"}
-              className="mt-5 rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {busyAction === "upload" ? "Uploading..." : "Upload and probe metadata"}
-            </button>
-          </div>
-        </div>
-
-        <div className="glass-panel rounded-[2rem] p-6 sm:p-8">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="font-display text-sm font-semibold uppercase tracking-[0.24em] text-muted">
-                Available assets
-              </p>
-              <h2 className="mt-3 text-2xl font-semibold">Uploads and generated outputs</h2>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                void handleRefresh();
-              }}
-              className="rounded-full border border-panel-border bg-white/80 px-4 py-2 text-sm font-semibold text-foreground"
-            >
-              Refresh
-            </button>
-          </div>
-
-          <div className="mt-6 grid gap-4">
-            {assets.length > 0 ? (
-              assets.map((asset) => (
-                <article
-                  key={asset.id}
-                  className="rounded-[1.2rem] border border-panel-border bg-white/84 p-3 shadow-sm"
-                >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                    <AssetThumbnail asset={asset} />
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-semibold text-foreground sm:text-base">
-                          {asset.originalName}
-                        </p>
-                        <span className="rounded-full bg-[#111111] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
-                          {asset.kind}
-                        </span>
-                        <span className="rounded-full bg-[#f3ede4] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
-                          {asset.storageDriver ?? "local"}
-                        </span>
-                      </div>
-
-                      <p className="mt-1 truncate text-xs uppercase tracking-[0.14em] text-muted">
-                        {asset.metadata?.formatName ?? asset.mimeType}
-                      </p>
-
-                      <p className="mt-2 text-sm leading-6 text-muted">
-                        {formatAssetSummary(asset)}
-                      </p>
-                    </div>
-
-                    <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-stretch">
-                      <a
-                        href={toApiUrl(asset.downloadUrl)}
-                        className="rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Download
-                      </a>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void handleDeleteAsset(asset);
-                        }}
-                        disabled={busyAction === `delete:${asset.id}`}
-                        className="rounded-full border border-[#efc6b2] bg-[#fff1ea] px-4 py-2 text-sm font-semibold text-[#8f3b13] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {busyAction === `delete:${asset.id}` ? "Deleting..." : "Delete"}
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              ))
-            ) : (
-              <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
-                Upload files to populate the asset library.
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-2">
-        <div className="glass-panel rounded-[2rem] p-6 sm:p-8">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="font-display text-sm font-semibold uppercase tracking-[0.24em] text-muted">
-                Trim job
-              </p>
-              <h2 className="mt-3 text-2xl font-semibold">Cut one clip to the exact moment range</h2>
-            </div>
-            <div className="rounded-full bg-accent-soft px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#8f3b13]">
-              Step 2A
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-4">
-            <label className="grid gap-2 text-sm font-medium text-foreground">
-              Source asset
-              <select
-                value={trimAssetId}
+            <div className="mt-6 rounded-[1.5rem] border border-dashed border-panel-border bg-white/70 p-5">
+              <input
+                key={fileInputKey}
+                type="file"
+                multiple
+                accept="video/*,audio/*,image/*"
                 onChange={(event) => {
-                  const nextAssetId = event.target.value;
-                  setTrimAssetId(nextAssetId);
-                  const asset = assets.find((item) => item.id === nextAssetId);
-                  const suggestedEndTime =
-                    asset?.metadata?.durationSeconds !== null &&
-                    asset?.metadata?.durationSeconds !== undefined
-                      ? Math.min(5, Math.max(1, asset.metadata.durationSeconds))
-                      : 5;
-                  setTrimEndTime(String(Number(suggestedEndTime.toFixed(2))));
+                  setSelectedFiles(Array.from(event.target.files ?? []));
                 }}
-                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
-              >
-                <option value="">Select uploaded asset</option>
-                {assets.map((asset) => (
-                  <option key={asset.id} value={asset.id}>
-                    {asset.originalName}
-                  </option>
-                ))}
-              </select>
-            </label>
+                className="block w-full text-sm text-muted file:mr-4 file:rounded-full file:border-0 file:bg-foreground file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
+              />
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-2 text-sm font-medium text-foreground">
-                Start time (seconds)
-                <input
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={trimStartTime}
-                  onChange={(event) => {
-                    setTrimStartTime(event.target.value);
-                  }}
-                  className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
-                />
-              </label>
-
-              <label className="grid gap-2 text-sm font-medium text-foreground">
-                End time (seconds)
-                <input
-                  type="number"
-                  min="0.1"
-                  step="0.1"
-                  value={trimEndTime}
-                  onChange={(event) => {
-                    setTrimEndTime(event.target.value);
-                  }}
-                  className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
-                />
-              </label>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                void handleTrimJob();
-              }}
-              disabled={busyAction === "trim" || !trimAssetId}
-              className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {busyAction === "trim" ? "Queueing trim..." : "Queue trim job"}
-            </button>
-          </div>
-        </div>
-
-        <div className="glass-panel rounded-[2rem] p-6 sm:p-8">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="font-display text-sm font-semibold uppercase tracking-[0.24em] text-muted">
-                Merge job
-              </p>
-              <h2 className="mt-3 text-2xl font-semibold">Combine prepared clips into one final video</h2>
-            </div>
-            <div className="rounded-full bg-accent-soft px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#8f3b13]">
-              Step 2B
-            </div>
-          </div>
-
-          <div className="mt-6 space-y-3">
-            {assets.length > 0 ? (
-              assets.map((asset) => {
-                const checked = mergeAssetIds.includes(asset.id);
-
-                return (
-                  <label
-                    key={asset.id}
-                    className="flex items-center gap-3 rounded-[1.25rem] border border-panel-border bg-white/78 px-3 py-3"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => {
-                        toggleMergeAsset(asset.id);
-                      }}
-                      className="h-4 w-4 shrink-0"
-                    />
-                    <AssetThumbnail asset={asset} compact />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-semibold text-foreground">
-                          {asset.originalName}
-                        </p>
-                        {checked ? (
-                          <span className="rounded-full bg-[#111111] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
-                            Selected
-                          </span>
-                        ) : null}
-                      </div>
-                      <p className="mt-1 truncate text-[11px] uppercase tracking-[0.14em] text-muted">
-                        {asset.metadata?.formatName ?? asset.mimeType}
-                      </p>
-                      <p className="mt-1 text-xs leading-5 text-muted">
-                        {formatAssetSummary(asset)}
-                      </p>
-                    </div>
-                  </label>
-                );
-              })
-            ) : (
-              <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
-                Upload at least two clips to enable merge.
+              <div className="mt-4 flex flex-wrap gap-2">
+                {selectedFiles.length > 0 ? (
+                  selectedFiles.map((file) => (
+                    <span
+                      key={`${file.name}-${file.lastModified}`}
+                      className="rounded-full bg-white px-3 py-2 text-xs font-medium text-foreground shadow-sm"
+                    >
+                      {file.name}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-sm text-muted">No files selected yet.</span>
+                )}
               </div>
-            )}
-
-            {mergeRequiresNormalization ? (
-              <div className="rounded-[1.5rem] bg-[#fff1ea] px-4 py-4 text-[#8f3b13]">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold">
-                    Merge is blocked until the selected clips share one format.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMergeHelpOpen((current) => !current);
-                    }}
-                    aria-expanded={isMergeHelpOpen}
-                    aria-label="Toggle merge documentation"
-                    className="flex h-8 w-8 items-center justify-center rounded-full border border-[#e8b39a] bg-white text-sm font-semibold text-[#8f3b13] transition hover:bg-[#fff8f4]"
-                  >
-                    i
-                  </button>
-                </div>
-
-                {isMergeHelpOpen ? (
-                  <div className="mt-3 text-sm leading-6">
-                    <p>
-                      Merge needs clips with the same format first. Normalize the selected files so they share the same resolution, codecs, frame rate, and audio settings.
-                    </p>
-                    {mergeCompatibilityIssues.map((issue) => (
-                      <p key={issue} className="mt-2">
-                        {issue}
-                      </p>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            <div className="rounded-[1.5rem] bg-white/78 p-4">
-              <p className="text-sm font-semibold text-foreground">Normalize for merge</p>
-              <p className="mt-2 text-sm leading-6 text-muted">
-                {selectedNormalizePreset?.description ??
-                  "Choose how the selected clips should be aligned before merge."}
-              </p>
-
-              <label className="mt-4 grid gap-2 text-sm font-medium text-foreground">
-                Target preset
-                <select
-                  value={normalizePreset}
-                  onChange={(event) => {
-                    setNormalizePreset(event.target.value as NormalizeTargetPreset);
-                  }}
-                  className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
-                >
-                  {normalizeTargetPresetOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted">Target canvas</p>
-                  <p className="mt-2 text-sm font-semibold">
-                    {normalizeTarget ? `${normalizeTarget.width}x${normalizeTarget.height}` : "Unavailable"}
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted">Output profile</p>
-                  <p className="mt-2 text-sm font-semibold">
-                    {formatNormalizeTarget(normalizeTarget)}
-                  </p>
-                </div>
-              </div>
-
-              {normalizeTargetPlan.errorMessage ? (
-                <p className="mt-4 rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
-                  {normalizeTargetPlan.errorMessage}
-                </p>
-              ) : null}
 
               <button
                 type="button"
                 onClick={() => {
-                  void handleNormalizeJobs();
+                  void handleUpload();
                 }}
-                disabled={busyAction === "normalize" || !normalizeTarget}
-                className="mt-4 rounded-full border border-panel-border bg-white px-5 py-3 text-sm font-semibold text-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={busyAction === "upload"}
+                className="mt-5 rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {busyAction === "normalize"
-                  ? "Queueing normalize..."
-                  : "Normalize selected clips"}
+                {busyAction === "upload" ? "Uploading..." : "Upload and probe metadata"}
               </button>
             </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                void handleMergeJob();
-              }}
-              disabled={
-                busyAction === "merge" ||
-                mergeAssetIds.length < 2 ||
-                mergeRequiresNormalization
-              }
-              className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {busyAction === "merge" ? "Queueing merge..." : "Queue merge job"}
-            </button>
-          </div>
+          </section>
         </div>
+
+        {renderActivePanel()}
       </section>
 
       <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="font-display text-sm font-semibold uppercase tracking-[0.24em] text-muted">
-              Processing history
+              Shared asset library
             </p>
-            <h2 className="mt-3 text-2xl font-semibold">Track progress and download finished results</h2>
+            <h2 className="mt-3 text-2xl font-semibold">Uploads and generated outputs</h2>
           </div>
-          <div className="rounded-full bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted">
-            Step 3
+          <button
+            type="button"
+            onClick={() => {
+              void handleRefresh();
+            }}
+            className="rounded-full border border-panel-border bg-white/80 px-4 py-2 text-sm font-semibold text-foreground"
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <div className="rounded-[1.35rem] bg-white/75 px-4 py-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-muted">All assets</p>
+            <p className="mt-2 text-lg font-semibold">{assets.length}</p>
+          </div>
+          <div className="rounded-[1.35rem] bg-white/75 px-4 py-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-muted">Video-ready</p>
+            <p className="mt-2 text-lg font-semibold">{videoAssets.length}</p>
+          </div>
+          <div className="rounded-[1.35rem] bg-white/75 px-4 py-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-muted">Image-ready</p>
+            <p className="mt-2 text-lg font-semibold">{imageAssets.length}</p>
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4">
-          {jobs.length > 0 ? (
-            jobs.map((job) => (
-              <article key={job.id} className="rounded-[1.5rem] bg-white/78 p-5 shadow-sm">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg font-semibold">
-                      {getJobTypeLabel(job.type)}
-                    </p>
-                    <p className="mt-1 text-sm text-muted">
-                      {job.id} | {new Date(job.createdAt).toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="rounded-full bg-[#f8f5ef] px-4 py-2 text-sm font-semibold text-foreground">
-                    {formatStatusLabel(job.status)}
-                  </div>
-                </div>
+        <div className="mt-6 grid max-h-[34rem] gap-4 overflow-y-auto pr-1">
+          {assets.length > 0 ? (
+            assets.map((asset) => (
+              <article
+                key={asset.id}
+                className="rounded-[1.2rem] border border-panel-border bg-white/84 p-3 shadow-sm"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <AssetThumbnail asset={asset} />
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Type</p>
-                    <p className="mt-2 text-sm font-semibold">{job.type}</p>
-                  </div>
-                  <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Sources</p>
-                    <p className="mt-2 text-sm font-semibold">{job.sourceAssetIds.length}</p>
-                  </div>
-                  <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Updated</p>
-                    <p className="mt-2 text-sm font-semibold">
-                      {new Date(job.updatedAt).toLocaleTimeString()}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-foreground sm:text-base">
+                        {asset.originalName}
+                      </p>
+                      <span className="rounded-full bg-[#111111] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
+                        {asset.kind}
+                      </span>
+                      <span className="rounded-full bg-[#f3ede4] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
+                        {asset.storageDriver ?? "local"}
+                      </span>
+                    </div>
+
+                    <p className="mt-1 truncate text-xs uppercase tracking-[0.14em] text-muted">
+                      {asset.metadata?.formatName ?? asset.mimeType}
+                    </p>
+
+                    <p className="mt-2 text-sm leading-6 text-muted">
+                      {formatAssetSummary(asset)}
                     </p>
                   </div>
-                </div>
 
-                <div className="mt-4 flex flex-wrap gap-3">
-                  {job.downloadUrl ? (
+                  <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-stretch">
                     <a
-                      href={toApiUrl(job.downloadUrl)}
-                      className="rounded-full border border-panel-border bg-white px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef]"
+                      href={toApiUrl(asset.downloadUrl)}
+                      className="rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground"
                       target="_blank"
                       rel="noreferrer"
                     >
-                      Download result
+                      Download
                     </a>
-                  ) : null}
-
-                  {job.error ? (
-                    <p className="rounded-full bg-[#fff1ea] px-4 py-2 text-sm text-[#8f3b13]">
-                      {job.error}
-                    </p>
-                  ) : null}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleDeleteAsset(asset);
+                      }}
+                      disabled={busyAction === `delete:${asset.id}`}
+                      className="rounded-full border border-[#efc6b2] bg-[#fff1ea] px-4 py-2 text-sm font-semibold text-[#8f3b13] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {busyAction === `delete:${asset.id}` ? "Deleting..." : "Delete"}
+                    </button>
+                  </div>
                 </div>
               </article>
             ))
           ) : (
             <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
-              No jobs queued yet. Upload files and run trim or merge to populate this list.
+              Upload files to populate the shared asset library.
             </div>
           )}
         </div>

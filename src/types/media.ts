@@ -43,9 +43,21 @@ export type NormalizeTargetProfile = {
   audioCodec: "aac";
 };
 
+export type ConvertImageFormat = "png" | "jpeg" | "webp";
+export type ConvertImageFit = "contain" | "cover" | "stretch";
+
+export type ConvertImageTarget = {
+  format: ConvertImageFormat;
+  quality?: number;
+  width?: number;
+  height?: number;
+  fit?: ConvertImageFit;
+  background?: string;
+};
+
 export type ProcessingJob = {
   id: string;
-  type: "trim" | "merge" | "normalize";
+  type: "trim" | "merge" | "normalize" | "convert-image";
   status: "queued" | "processing" | "completed" | "failed";
   sourceAssetIds: string[];
   outputAssetId: string | null;
@@ -53,12 +65,13 @@ export type ProcessingJob = {
   error: string | null;
   createdAt: string;
   updatedAt: string;
+  progress?: string | boolean | number | object | null;
   options: {
     assetId?: string;
     startTime?: number;
     endTime?: number;
     sourceAssetIds?: string[];
-    target?: NormalizeTargetProfile;
+    target?: NormalizeTargetProfile | ConvertImageTarget;
   };
 };
 

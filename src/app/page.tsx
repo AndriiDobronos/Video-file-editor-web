@@ -1,5 +1,5 @@
 import { EditorDashboard } from "@/components/editor-dashboard";
 
 export default function Home() {
-  return <EditorDashboard />;
+  return <EditorDashboard activeView="workspace" />;
 }

@@ -2,14 +2,14 @@ import Link from "next/link";
 
 const featureCards = [
   {
-    title: "Upload and organize",
+    title: "Upload once, reuse everywhere",
     description:
-      "Bring clips into one workspace, review their names, sizes, durations, and resolutions, and keep uploads easy to find.",
+      "Bring files into one shared workspace, then reuse the same uploads on trim, merge, normalize, convert, and jobs pages.",
   },
   {
-    title: "Trim with precision",
+    title: "Dedicated function pages",
     description:
-      "Choose one source clip, set start and end points, and export a shorter version for highlights, intros, or cleanup.",
+      "Open only the tool you need instead of scrolling past unrelated controls. Each function now has its own route.",
   },
   {
     title: "Normalize before merge",
@@ -73,10 +73,10 @@ export default function DocsPage() {
           Documentation
         </p>
         <h1 className="mt-4 max-w-4xl font-display text-4xl font-semibold leading-tight sm:text-5xl">
-          A quick guide for uploading, preparing, merging, and downloading video files.
+          A quick guide for using the shared workspace and jumping straight to the right function page.
         </h1>
         <p className="mt-4 max-w-3xl text-base leading-8 text-muted sm:text-lg">
-          This guide focuses on what the editor helps you do and how to move through the workflow with less trial and error.
+          This guide focuses on what the editor helps you do, how the new page structure works, and how to move through each file task with less scrolling.
         </p>
 
         <div className="mt-6 flex flex-wrap gap-3">
@@ -114,31 +114,31 @@ export default function DocsPage() {
           <li className="rounded-[1.5rem] bg-white/78 p-5">
             <p className="text-sm font-semibold text-foreground">1. Upload your source clips.</p>
             <p className="mt-2 text-sm leading-6 text-muted">
-              Start with the files you want to trim, compare, or merge later.
+              Start with the files you want to trim, compare, merge, or convert later.
             </p>
           </li>
           <li className="rounded-[1.5rem] bg-white/78 p-5">
-            <p className="text-sm font-semibold text-foreground">2. Review duration, size, and resolution.</p>
+            <p className="text-sm font-semibold text-foreground">2. Open the dedicated function page.</p>
             <p className="mt-2 text-sm leading-6 text-muted">
-              These details help you decide whether the clips can merge directly or should be normalized first.
+              Use the top navigation to jump directly to Trim, Merge, Normalize, Convert, or Jobs instead of working through one long page.
             </p>
           </li>
           <li className="rounded-[1.5rem] bg-white/78 p-5">
-            <p className="text-sm font-semibold text-foreground">3. Trim or normalize as needed.</p>
+            <p className="text-sm font-semibold text-foreground">3. Review file details and run the selected action.</p>
             <p className="mt-2 text-sm leading-6 text-muted">
-              Use trim to cut a single clip. Use normalize when merge is blocked because the selected clips do not match.
+              Use Trim for one clip, Normalize when Merge reports mismatched clips, or Convert when you need a new image format.
             </p>
           </li>
           <li className="rounded-[1.5rem] bg-white/78 p-5">
-            <p className="text-sm font-semibold text-foreground">4. Merge prepared clips.</p>
+            <p className="text-sm font-semibold text-foreground">4. Merge or export prepared results.</p>
             <p className="mt-2 text-sm leading-6 text-muted">
-              After clips share the same merge-ready format, create one final export.
+              After clips share the same merge-ready format, create the final export or queue the conversion you need.
             </p>
           </li>
           <li className="rounded-[1.5rem] bg-white/78 p-5">
-            <p className="text-sm font-semibold text-foreground">5. Download or remove finished assets.</p>
+            <p className="text-sm font-semibold text-foreground">5. Track jobs and download finished assets.</p>
             <p className="mt-2 text-sm leading-6 text-muted">
-              Keep only the files you still need and delete old assets when the workspace gets crowded.
+              Open the Jobs page to watch queue status, then keep only the files you still need in the shared asset library.
             </p>
           </li>
         </ol>
