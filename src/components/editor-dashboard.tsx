@@ -705,20 +705,6 @@ export function EditorDashboard() {
               </p>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <a
-                href="#workspace"
-                className="rounded-full bg-foreground px-6 py-3 text-center text-sm font-semibold text-white transition-transform duration-200 hover:-translate-y-0.5"
-              >
-                Open workspace
-              </a>
-              <a
-                href="/docs"
-                className="rounded-full border border-panel-border bg-white/80 px-6 py-3 text-center text-sm font-semibold text-foreground transition-colors duration-200 hover:bg-white"
-              >
-                Read documentation
-              </a>
-            </div>
           </div>
 
           <div className="rounded-[1.75rem] bg-[#111111] p-4 text-white shadow-[0_30px_80px_rgba(17,17,17,0.22)]">
@@ -1255,7 +1241,7 @@ export function EditorDashboard() {
                   {job.downloadUrl ? (
                     <a
                       href={toApiUrl(job.downloadUrl)}
-                      className="rounded-full bg-foreground px-4 py-2 text-sm font-semibold text-white"
+                      className="rounded-full border border-panel-border bg-white px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef]"
                       target="_blank"
                       rel="noreferrer"
                     >
