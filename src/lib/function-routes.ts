@@ -1,6 +1,8 @@
 export type EditorView =
   | "workspace"
   | "trim"
+  | "compress"
+  | "extract-frame"
   | "merge"
   | "normalize"
   | "crop-pad"
@@ -22,6 +24,20 @@ export const functionRouteOptions: Array<{
     label: "Trim clip",
     shortLabel: "Trim",
     description: "Cut one source clip to the exact moment range you need.",
+  },
+  {
+    view: "compress",
+    href: "/functions/compress",
+    label: "Compress video",
+    shortLabel: "Compress",
+    description: "Reduce file size or transcode one video with simple presets or advanced quality controls.",
+  },
+  {
+    view: "extract-frame",
+    href: "/functions/extract-frame",
+    label: "Extract frame",
+    shortLabel: "Frame",
+    description: "Capture one still frame from a video and export it as PNG, JPEG, or WebP.",
   },
   {
     view: "merge",
@@ -72,6 +88,18 @@ export const editorViewMeta: Record<
     eyebrow: "Function",
     description:
       "Open one clip, set the exact start and end moment, and queue a clean trimmed export.",
+  },
+  compress: {
+    label: "Compress",
+    eyebrow: "Function",
+    description:
+      "Shrink one video or transcode it to a cleaner MP4 export with preset or advanced quality controls.",
+  },
+  "extract-frame": {
+    label: "Extract frame",
+    eyebrow: "Function",
+    description:
+      "Pick one moment in a clip and export that frame as a standalone image file.",
   },
   merge: {
     label: "Merge",

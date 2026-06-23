@@ -5,6 +5,8 @@ import { getFunctionViewFromSlug } from "@/lib/function-routes";
 export async function generateStaticParams() {
   return [
     { view: "trim" },
+    { view: "compress" },
+    { view: "extract-frame" },
     { view: "merge" },
     { view: "normalize" },
     { view: "crop-pad" },

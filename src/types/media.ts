@@ -45,11 +45,40 @@ export type NormalizeTargetProfile = {
 
 export type ConvertImageFormat = "png" | "jpeg" | "webp";
 export type ConvertImageFit = "contain" | "cover" | "stretch";
+export type VideoCompressionMode = "simple" | "advanced";
+export type VideoCompressionPreset = "high-quality" | "balanced" | "small-file";
+export type VideoCompressionEncoderPreset =
+  | "ultrafast"
+  | "superfast"
+  | "veryfast"
+  | "faster"
+  | "fast"
+  | "medium"
+  | "slow";
 export type CropPadMode = "crop" | "pad";
 export type CropPadAnchorX = "left" | "center" | "right";
 export type CropPadAnchorY = "top" | "center" | "bottom";
 
+export type VideoCompressionTarget = {
+  mode: VideoCompressionMode;
+  preset?: VideoCompressionPreset;
+  crf?: number;
+  videoBitrateKbps?: number;
+  audioBitrateKbps?: number;
+  encoderPreset?: VideoCompressionEncoderPreset;
+};
+
 export type ConvertImageTarget = {
+  format: ConvertImageFormat;
+  quality?: number;
+  width?: number;
+  height?: number;
+  fit?: ConvertImageFit;
+  background?: string;
+};
+
+export type ExtractFrameTarget = {
+  timeSeconds: number;
   format: ConvertImageFormat;
   quality?: number;
   width?: number;
@@ -69,7 +98,14 @@ export type CropPadTarget = {
 
 export type ProcessingJob = {
   id: string;
-  type: "trim" | "merge" | "normalize" | "crop-pad" | "convert-image";
+  type:
+    | "trim"
+    | "merge"
+    | "normalize"
+    | "compress-video"
+    | "extract-frame"
+    | "crop-pad"
+    | "convert-image";
   status: "queued" | "processing" | "completed" | "failed";
   sourceAssetIds: string[];
   outputAssetId: string | null;
@@ -83,7 +119,12 @@ export type ProcessingJob = {
     startTime?: number;
     endTime?: number;
     sourceAssetIds?: string[];
-    target?: NormalizeTargetProfile | CropPadTarget | ConvertImageTarget;
+    target?:
+      | NormalizeTargetProfile
+      | VideoCompressionTarget
+      | ExtractFrameTarget
+      | CropPadTarget
+      | ConvertImageTarget;
   };
 };
 

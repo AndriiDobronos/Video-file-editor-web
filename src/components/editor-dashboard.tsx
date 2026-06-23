@@ -9,6 +9,7 @@ import {
   type EditorView,
 } from "@/lib/function-routes";
 import type {
+  ExtractFrameTarget,
   ConvertImageFit,
   ConvertImageFormat,
   ConvertImageTarget,
@@ -21,6 +22,10 @@ import type {
   NormalizeTargetPreset,
   NormalizeTargetProfile,
   ProcessingJob,
+  VideoCompressionEncoderPreset,
+  VideoCompressionMode,
+  VideoCompressionPreset,
+  VideoCompressionTarget,
 } from "@/types/media";
 
 type AssetsResponse = {
@@ -42,7 +47,7 @@ type JobResponse = {
 const statusHighlights = [
   "Shared uploads stay available on every function page",
   "Each tool now opens on its own route instead of one long scroll",
-  "Crop, pad, trim, convert, and merge all reuse the same shared asset library",
+  "Compress, extract, crop, trim, convert, and merge all reuse the same shared asset library",
 ];
 
 const normalizeTargetPresetOptions: Array<{
@@ -69,6 +74,67 @@ const normalizeTargetPresetOptions: Array<{
     value: "match-average",
     label: "Match average size",
     description: "Builds a middle-ground canvas from the selected clip dimensions.",
+  },
+];
+
+const compressionModeOptions: Array<{
+  value: VideoCompressionMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "simple",
+    label: "Simple",
+    description: "Pick a ready-made compression profile and export quickly.",
+  },
+  {
+    value: "advanced",
+    label: "Advanced",
+    description: "Tune CRF, bitrate, and encoder preset yourself.",
+  },
+];
+
+const compressionPresetOptions: Array<{
+  value: VideoCompressionPreset;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "high-quality",
+    label: "High quality",
+    description: "Larger file, cleaner image, and safer detail retention.",
+  },
+  {
+    value: "balanced",
+    label: "Balanced",
+    description: "A practical middle ground for everyday exports.",
+  },
+  {
+    value: "small-file",
+    label: "Small file",
+    description: "Pushes file size lower when delivery weight matters most.",
+  },
+];
+
+const compressionEncoderPresetOptions: Array<{
+  value: VideoCompressionEncoderPreset;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "veryfast",
+    label: "Very fast",
+    description: "Faster export time with slightly weaker compression efficiency.",
+  },
+  {
+    value: "medium",
+    label: "Medium",
+    description: "A balanced default between speed and compression efficiency.",
+  },
+  {
+    value: "slow",
+    label: "Slow",
+    description: "Takes longer but can squeeze file size down more effectively.",
   },
 ];
 
@@ -192,6 +258,21 @@ const mergeCompatibilityChecks: MergeCompatibilityCheck[] = [
 
 const sessionStorageKeys = {
   trimAssetId: "vfe:trim-asset-id",
+  compressAssetId: "vfe:compress-asset-id",
+  compressMode: "vfe:compress-mode",
+  compressPreset: "vfe:compress-preset",
+  compressCrf: "vfe:compress-crf",
+  compressVideoBitrate: "vfe:compress-video-bitrate",
+  compressAudioBitrate: "vfe:compress-audio-bitrate",
+  compressEncoderPreset: "vfe:compress-encoder-preset",
+  extractAssetId: "vfe:extract-asset-id",
+  extractTimeSeconds: "vfe:extract-time-seconds",
+  extractFormat: "vfe:extract-format",
+  extractQuality: "vfe:extract-quality",
+  extractWidth: "vfe:extract-width",
+  extractHeight: "vfe:extract-height",
+  extractFit: "vfe:extract-fit",
+  extractBackground: "vfe:extract-background",
   mergeAssetIds: "vfe:merge-asset-ids",
   normalizePreset: "vfe:normalize-preset",
   cropPadAssetId: "vfe:crop-pad-asset-id",
@@ -325,6 +406,10 @@ function isVideoAsset(asset: MediaAsset) {
 
 function isCropPadEligibleAsset(asset: MediaAsset) {
   return isVideoAsset(asset) || isImageAsset(asset);
+}
+
+function canRegenerateThumbnail(asset: MediaAsset) {
+  return isCropPadEligibleAsset(asset);
 }
 
 function getSuggestedTrimEndTime(asset: MediaAsset | undefined) {
@@ -464,7 +549,10 @@ function formatNormalizeTarget(target: NormalizeTargetProfile | null) {
   return `${target.width}x${target.height} | H.264/AAC | ${target.frameRate} fps | ${target.audioSampleRate / 1000} kHz stereo`;
 }
 
-function parseOptionalPositiveInteger(value: string) {
+function parseOptionalPositiveInteger(
+  value: string,
+  label = "Width, height, and quality",
+) {
   if (!value.trim()) {
     return { value: undefined, error: null };
   }
@@ -474,11 +562,140 @@ function parseOptionalPositiveInteger(value: string) {
   if (!Number.isInteger(parsed) || parsed <= 0) {
     return {
       value: undefined,
-      error: "Width, height, and quality must use positive whole numbers.",
+      error: `${label} must use positive whole numbers.`,
     };
   }
 
   return { value: parsed, error: null };
+}
+
+function parseOptionalIntegerInRange(
+  value: string,
+  config: { min: number; max: number; label: string },
+) {
+  if (!value.trim()) {
+    return { value: undefined, error: null };
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed < config.min || parsed > config.max) {
+    return {
+      value: undefined,
+      error: `${config.label} must be a whole number between ${config.min} and ${config.max}.`,
+    };
+  }
+
+  return { value: parsed, error: null };
+}
+
+function parseRequiredNonNegativeNumber(value: string, label: string) {
+  if (!value.trim()) {
+    return {
+      value: undefined,
+      error: `${label} is required.`,
+    };
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return {
+      value: undefined,
+      error: `${label} must be zero or greater.`,
+    };
+  }
+
+  return { value: parsed, error: null };
+}
+
+function buildCompressionTargetPlan(input: {
+  mode: VideoCompressionMode;
+  preset: VideoCompressionPreset;
+  crf: string;
+  videoBitrateKbps: string;
+  audioBitrateKbps: string;
+  encoderPreset: VideoCompressionEncoderPreset;
+}) {
+  if (input.mode === "simple") {
+    return {
+      target: {
+        mode: "simple",
+        preset: input.preset,
+      } satisfies VideoCompressionTarget,
+      errorMessage: null,
+    };
+  }
+
+  const crfResult = parseOptionalIntegerInRange(input.crf, {
+    min: 0,
+    max: 51,
+    label: "CRF",
+  });
+  const videoBitrateResult = parseOptionalPositiveInteger(
+    input.videoBitrateKbps,
+    "Video bitrate",
+  );
+  const audioBitrateResult = parseOptionalPositiveInteger(
+    input.audioBitrateKbps,
+    "Audio bitrate",
+  );
+
+  const errorMessage =
+    crfResult.error ?? videoBitrateResult.error ?? audioBitrateResult.error ?? null;
+
+  if (errorMessage) {
+    return {
+      target: null,
+      errorMessage,
+    };
+  }
+
+  const target: VideoCompressionTarget = {
+    mode: "advanced",
+    encoderPreset: input.encoderPreset,
+  };
+
+  if (typeof crfResult.value === "number") {
+    target.crf = crfResult.value;
+  }
+
+  if (videoBitrateResult.value) {
+    target.videoBitrateKbps = videoBitrateResult.value;
+  }
+
+  if (audioBitrateResult.value) {
+    target.audioBitrateKbps = audioBitrateResult.value;
+  }
+
+  return {
+    target,
+    errorMessage: null,
+  };
+}
+
+function formatCompressionTargetSummary(target: VideoCompressionTarget | null) {
+  if (!target) {
+    return "Target is unavailable.";
+  }
+
+  if (target.mode === "simple") {
+    const selectedPreset = compressionPresetOptions.find(
+      (option) => option.value === target.preset,
+    );
+
+    return `${selectedPreset?.label ?? "Balanced"} | MP4/H.264/AAC`;
+  }
+
+  const details = [
+    "Advanced",
+    typeof target.crf === "number" ? `CRF ${target.crf}` : null,
+    target.videoBitrateKbps ? `${target.videoBitrateKbps} kbps video` : null,
+    target.audioBitrateKbps ? `${target.audioBitrateKbps} kbps audio` : null,
+    target.encoderPreset ? `${target.encoderPreset} preset` : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return details.join(" | ");
 }
 
 function buildConvertTargetPlan(input: {
@@ -489,9 +706,9 @@ function buildConvertTargetPlan(input: {
   fit: ConvertImageFit;
   background: string;
 }) {
-  const qualityResult = parseOptionalPositiveInteger(input.quality);
-  const widthResult = parseOptionalPositiveInteger(input.width);
-  const heightResult = parseOptionalPositiveInteger(input.height);
+  const qualityResult = parseOptionalPositiveInteger(input.quality, "Quality");
+  const widthResult = parseOptionalPositiveInteger(input.width, "Width");
+  const heightResult = parseOptionalPositiveInteger(input.height, "Height");
 
   const errorMessage =
     qualityResult.error ?? widthResult.error ?? heightResult.error ?? null;
@@ -545,6 +762,114 @@ function formatConvertTargetSummary(target: ConvertImageTarget | null) {
   }
 
   const details = [
+    target.format.toUpperCase(),
+    target.width && target.height
+      ? `${target.width}x${target.height}`
+      : target.width
+        ? `${target.width}px wide`
+        : target.height
+          ? `${target.height}px high`
+          : "Keep original size",
+    target.fit ? `Fit: ${target.fit}` : null,
+    target.quality ? `Quality: ${target.quality}` : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return details.join(" | ");
+}
+
+function buildExtractFrameTargetPlan(input: {
+  asset: MediaAsset | null;
+  timeSeconds: string;
+  format: ConvertImageFormat;
+  quality: string;
+  width: string;
+  height: string;
+  fit: ConvertImageFit;
+  background: string;
+}) {
+  if (!input.asset) {
+    return {
+      target: null,
+      errorMessage: "Choose one video clip before extracting a frame.",
+    };
+  }
+
+  const timeResult = parseRequiredNonNegativeNumber(input.timeSeconds, "Frame time");
+  const qualityResult = parseOptionalPositiveInteger(input.quality);
+  const widthResult = parseOptionalPositiveInteger(input.width);
+  const heightResult = parseOptionalPositiveInteger(input.height);
+
+  const errorMessage =
+    timeResult.error ??
+    qualityResult.error ??
+    widthResult.error ??
+    heightResult.error ??
+    null;
+
+  if (errorMessage) {
+    return {
+      target: null,
+      errorMessage,
+    };
+  }
+
+  const duration = input.asset.metadata?.durationSeconds;
+
+  if (
+    typeof duration === "number" &&
+    typeof timeResult.value === "number" &&
+    timeResult.value > duration
+  ) {
+    return {
+      target: null,
+      errorMessage: "Frame time cannot be greater than the source duration.",
+    };
+  }
+
+  const background = input.background.trim();
+
+  if (background && !/^#[0-9a-fA-F]{6}$/.test(background)) {
+    return {
+      target: null,
+      errorMessage: "Background must use a six-digit hex color such as #ffffff.",
+    };
+  }
+
+  const target: ExtractFrameTarget = {
+    timeSeconds: timeResult.value ?? 0,
+    format: input.format,
+    fit: input.fit,
+  };
+
+  if (input.format !== "png" && qualityResult.value) {
+    target.quality = qualityResult.value;
+  }
+
+  if (widthResult.value) {
+    target.width = widthResult.value;
+  }
+
+  if (heightResult.value) {
+    target.height = heightResult.value;
+  }
+
+  if (background) {
+    target.background = background;
+  }
+
+  return {
+    target,
+    errorMessage: null,
+  };
+}
+
+function formatExtractFrameTargetSummary(target: ExtractFrameTarget | null) {
+  if (!target) {
+    return "Target is unavailable.";
+  }
+
+  const details = [
+    `${target.timeSeconds.toFixed(2)}s`,
     target.format.toUpperCase(),
     target.width && target.height
       ? `${target.width}x${target.height}`
@@ -693,6 +1018,10 @@ function getJobTypeLabel(type: ProcessingJob["type"]) {
   switch (type) {
     case "trim":
       return "Trim job";
+    case "compress-video":
+      return "Compress video job";
+    case "extract-frame":
+      return "Extract frame job";
     case "merge":
       return "Merge job";
     case "normalize":
@@ -849,6 +1178,23 @@ export function EditorDashboard({
   const [trimAssetId, setTrimAssetId] = useState("");
   const [trimStartTime, setTrimStartTime] = useState("0");
   const [trimEndTime, setTrimEndTime] = useState("5");
+  const [compressAssetId, setCompressAssetId] = useState("");
+  const [compressMode, setCompressMode] = useState<VideoCompressionMode>("simple");
+  const [compressPreset, setCompressPreset] =
+    useState<VideoCompressionPreset>("balanced");
+  const [compressCrf, setCompressCrf] = useState("");
+  const [compressVideoBitrate, setCompressVideoBitrate] = useState("");
+  const [compressAudioBitrate, setCompressAudioBitrate] = useState("");
+  const [compressEncoderPreset, setCompressEncoderPreset] =
+    useState<VideoCompressionEncoderPreset>("medium");
+  const [extractAssetId, setExtractAssetId] = useState("");
+  const [extractTimeSeconds, setExtractTimeSeconds] = useState("0");
+  const [extractFormat, setExtractFormat] = useState<ConvertImageFormat>("jpeg");
+  const [extractQuality, setExtractQuality] = useState("92");
+  const [extractWidth, setExtractWidth] = useState("");
+  const [extractHeight, setExtractHeight] = useState("");
+  const [extractFit, setExtractFit] = useState<ConvertImageFit>("contain");
+  const [extractBackground, setExtractBackground] = useState("#ffffff");
   const [mergeAssetIds, setMergeAssetIds] = useState<string[]>([]);
   const [normalizePreset, setNormalizePreset] =
     useState<NormalizeTargetPreset>("hd-720p");
@@ -882,6 +1228,28 @@ export function EditorDashboard({
   const videoAssets = assets.filter(isVideoAsset);
   const imageAssets = assets.filter(isImageAsset);
   const cropPadAssets = assets.filter(isCropPadEligibleAsset);
+  const selectedCompressAsset =
+    videoAssets.find((asset) => asset.id === compressAssetId) ?? null;
+  const compressTargetPlan = buildCompressionTargetPlan({
+    mode: compressMode,
+    preset: compressPreset,
+    crf: compressCrf,
+    videoBitrateKbps: compressVideoBitrate,
+    audioBitrateKbps: compressAudioBitrate,
+    encoderPreset: compressEncoderPreset,
+  });
+  const selectedExtractAsset =
+    videoAssets.find((asset) => asset.id === extractAssetId) ?? null;
+  const extractFrameTargetPlan = buildExtractFrameTargetPlan({
+    asset: selectedExtractAsset,
+    timeSeconds: extractTimeSeconds,
+    format: extractFormat,
+    quality: extractQuality,
+    width: extractWidth,
+    height: extractHeight,
+    fit: extractFit,
+    background: extractBackground,
+  });
   const selectedMergeAssets = videoAssets.filter((asset) =>
     mergeAssetIds.includes(asset.id),
   );
@@ -929,6 +1297,8 @@ export function EditorDashboard({
       if (nextAssets.length === 0) {
         setTrimAssetId("");
         setTrimEndTime("5");
+        setCompressAssetId("");
+        setExtractAssetId("");
         setMergeAssetIds([]);
         setCropPadAssetId("");
         setCropPadWidth("");
@@ -945,6 +1315,28 @@ export function EditorDashboard({
         const nextTrimAsset = nextVideoAssets[0];
         setTrimAssetId(nextTrimAsset?.id ?? "");
         setTrimEndTime(getSuggestedTrimEndTime(nextTrimAsset));
+      }
+
+      const hasSelectedCompressAsset = nextVideoAssets.some(
+        (asset) => asset.id === compressAssetId,
+      );
+
+      if (!hasSelectedCompressAsset) {
+        setCompressAssetId(nextVideoAssets[0]?.id ?? "");
+      }
+
+      const hasSelectedExtractAsset = nextVideoAssets.some(
+        (asset) => asset.id === extractAssetId,
+      );
+
+      if (!hasSelectedExtractAsset) {
+        const nextExtractAsset = nextVideoAssets[0];
+        setExtractAssetId(nextExtractAsset?.id ?? "");
+        setExtractTimeSeconds(
+          nextExtractAsset?.metadata?.durationSeconds
+            ? String(Number(Math.min(1, nextExtractAsset.metadata.durationSeconds).toFixed(2)))
+            : "0",
+        );
       }
 
       setMergeAssetIds((current) => {
@@ -1026,6 +1418,49 @@ export function EditorDashboard({
 
   useEffect(() => {
     setTrimAssetId(readSessionString(sessionStorageKeys.trimAssetId, ""));
+    setCompressAssetId(readSessionString(sessionStorageKeys.compressAssetId, ""));
+    setCompressMode(
+      readSessionString(sessionStorageKeys.compressMode, "simple") as VideoCompressionMode,
+    );
+    setCompressPreset(
+      readSessionString(
+        sessionStorageKeys.compressPreset,
+        "balanced",
+      ) as VideoCompressionPreset,
+    );
+    setCompressCrf(readSessionString(sessionStorageKeys.compressCrf, ""));
+    setCompressVideoBitrate(
+      readSessionString(sessionStorageKeys.compressVideoBitrate, ""),
+    );
+    setCompressAudioBitrate(
+      readSessionString(sessionStorageKeys.compressAudioBitrate, ""),
+    );
+    setCompressEncoderPreset(
+      readSessionString(
+        sessionStorageKeys.compressEncoderPreset,
+        "medium",
+      ) as VideoCompressionEncoderPreset,
+    );
+    setExtractAssetId(readSessionString(sessionStorageKeys.extractAssetId, ""));
+    setExtractTimeSeconds(readSessionString(sessionStorageKeys.extractTimeSeconds, "0"));
+    setExtractFormat(
+      readSessionString(
+        sessionStorageKeys.extractFormat,
+        "jpeg",
+      ) as ConvertImageFormat,
+    );
+    setExtractQuality(readSessionString(sessionStorageKeys.extractQuality, "92"));
+    setExtractWidth(readSessionString(sessionStorageKeys.extractWidth, ""));
+    setExtractHeight(readSessionString(sessionStorageKeys.extractHeight, ""));
+    setExtractFit(
+      readSessionString(
+        sessionStorageKeys.extractFit,
+        "contain",
+      ) as ConvertImageFit,
+    );
+    setExtractBackground(
+      readSessionString(sessionStorageKeys.extractBackground, "#ffffff"),
+    );
     setMergeAssetIds(readSessionStringArray(sessionStorageKeys.mergeAssetIds));
     setNormalizePreset(
       readSessionString(
@@ -1163,6 +1598,141 @@ export function EditorDashboard({
 
     window.sessionStorage.setItem(sessionStorageKeys.trimAssetId, trimAssetId);
   }, [hasRestoredSession, trimAssetId]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(sessionStorageKeys.compressAssetId, compressAssetId);
+  }, [hasRestoredSession, compressAssetId]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(sessionStorageKeys.compressMode, compressMode);
+  }, [hasRestoredSession, compressMode]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(sessionStorageKeys.compressPreset, compressPreset);
+  }, [hasRestoredSession, compressPreset]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(sessionStorageKeys.compressCrf, compressCrf);
+  }, [hasRestoredSession, compressCrf]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.compressVideoBitrate,
+      compressVideoBitrate,
+    );
+  }, [hasRestoredSession, compressVideoBitrate]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.compressAudioBitrate,
+      compressAudioBitrate,
+    );
+  }, [hasRestoredSession, compressAudioBitrate]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.compressEncoderPreset,
+      compressEncoderPreset,
+    );
+  }, [hasRestoredSession, compressEncoderPreset]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(sessionStorageKeys.extractAssetId, extractAssetId);
+  }, [hasRestoredSession, extractAssetId]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.extractTimeSeconds,
+      extractTimeSeconds,
+    );
+  }, [hasRestoredSession, extractTimeSeconds]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(sessionStorageKeys.extractFormat, extractFormat);
+  }, [hasRestoredSession, extractFormat]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(sessionStorageKeys.extractQuality, extractQuality);
+  }, [hasRestoredSession, extractQuality]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(sessionStorageKeys.extractWidth, extractWidth);
+  }, [hasRestoredSession, extractWidth]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(sessionStorageKeys.extractHeight, extractHeight);
+  }, [hasRestoredSession, extractHeight]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(sessionStorageKeys.extractFit, extractFit);
+  }, [hasRestoredSession, extractFit]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.extractBackground,
+      extractBackground,
+    );
+  }, [hasRestoredSession, extractBackground]);
 
   useEffect(() => {
     if (!hasRestoredSession) {
@@ -1375,6 +1945,84 @@ export function EditorDashboard({
     }
   }
 
+  async function handleCompressJob() {
+    if (!compressAssetId) {
+      setErrorMessage("Choose one uploaded video before creating a compression job.");
+      return;
+    }
+
+    if (!compressTargetPlan.target) {
+      setErrorMessage(
+        compressTargetPlan.errorMessage ?? "Compression target could not be prepared.",
+      );
+      return;
+    }
+
+    setBusyAction("compress");
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Preparing your video compression request.");
+      const response = await fetchJson<JobResponse>("/api/v1/jobs/compress-video", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          assetId: compressAssetId,
+          target: compressTargetPlan.target,
+        }),
+      });
+
+      await loadJobs();
+      setFeedback(`Compression job ${response.item.id.slice(0, 8)} has been queued.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Compression job failed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleExtractFrameJob() {
+    if (!extractAssetId) {
+      setErrorMessage("Choose one video clip before extracting a frame.");
+      return;
+    }
+
+    if (!extractFrameTargetPlan.target) {
+      setErrorMessage(
+        extractFrameTargetPlan.errorMessage ?? "Frame extraction target could not be prepared.",
+      );
+      return;
+    }
+
+    setBusyAction("extract-frame");
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Preparing your frame extraction request.");
+      const response = await fetchJson<JobResponse>("/api/v1/jobs/extract-frame", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          assetId: extractAssetId,
+          target: extractFrameTargetPlan.target,
+        }),
+      });
+
+      await loadJobs();
+      setFeedback(`Frame extraction job ${response.item.id.slice(0, 8)} has been queued.`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Frame extraction job failed.",
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   async function handleMergeJob() {
     if (mergeAssetIds.length < 2) {
       setErrorMessage("Select at least two video clips to merge.");
@@ -1453,6 +2101,30 @@ export function EditorDashboard({
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Normalize jobs could not be queued.",
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleRegenerateThumbnail(asset: MediaAsset) {
+    setBusyAction(`thumbnail:${asset.id}`);
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Refreshing the thumbnail preview.");
+      const response = await fetchJson<{ item?: MediaAsset; message?: string }>(
+        `/api/v1/assets/${asset.id}/thumbnail/regenerate`,
+        {
+          method: "POST",
+        },
+      );
+
+      await loadAssets();
+      setFeedback(response.message ?? `Thumbnail preview for ${asset.originalName} was refreshed.`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Thumbnail preview could not be refreshed.",
       );
     } finally {
       setBusyAction(null);
@@ -1686,6 +2358,397 @@ export function EditorDashboard({
             className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busyAction === "trim" ? "Queueing trim..." : "Queue trim job"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  function renderCompressPanel() {
+    const selectedCompressionPreset = compressionPresetOptions.find(
+      (option) => option.value === compressPreset,
+    );
+    const selectedCompressionMode = compressionModeOptions.find(
+      (option) => option.value === compressMode,
+    );
+
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Compress function"
+          title="Shrink one video or transcode it into a cleaner export"
+          badge="Function"
+        />
+
+        <div className="mt-6 space-y-4">
+          {videoAssets.length > 0 ? (
+            <div className="grid max-h-[18rem] gap-3 overflow-y-auto pr-1">
+              {videoAssets.map((asset) => (
+                <SelectableAssetCard
+                  key={asset.id}
+                  asset={asset}
+                  selected={compressAssetId === asset.id}
+                  inputType="radio"
+                  inputName="compress-asset"
+                  onSelect={() => {
+                    setCompressAssetId(asset.id);
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+              Upload a video clip to enable compression.
+            </div>
+          )}
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Mode
+              <select
+                value={compressMode}
+                onChange={(event) => {
+                  setCompressMode(event.target.value as VideoCompressionMode);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {compressionModeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="rounded-[1.5rem] bg-white/78 px-4 py-4">
+              <p className="text-sm font-semibold text-foreground">
+                {selectedCompressionMode?.label ?? "Compression mode"}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-muted">
+                {selectedCompressionMode?.description ??
+                  "Choose a preset workflow or tune compression settings yourself."}
+              </p>
+            </div>
+          </div>
+
+          {compressMode === "simple" ? (
+            <div className="rounded-[1.5rem] bg-white/78 p-4">
+              <label className="grid gap-2 text-sm font-medium text-foreground">
+                Preset
+                <select
+                  value={compressPreset}
+                  onChange={(event) => {
+                    setCompressPreset(event.target.value as VideoCompressionPreset);
+                  }}
+                  className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+                >
+                  {compressionPresetOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <p className="mt-3 text-sm leading-6 text-muted">
+                {selectedCompressionPreset?.description ??
+                  "Choose how aggressively the file should be compressed."}
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <label className="grid gap-2 text-sm font-medium text-foreground">
+                CRF (0-51, optional)
+                <input
+                  type="number"
+                  min="0"
+                  max="51"
+                  step="1"
+                  value={compressCrf}
+                  onChange={(event) => {
+                    setCompressCrf(event.target.value);
+                  }}
+                  className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+                />
+              </label>
+
+              <label className="grid gap-2 text-sm font-medium text-foreground">
+                Encoder preset
+                <select
+                  value={compressEncoderPreset}
+                  onChange={(event) => {
+                    setCompressEncoderPreset(
+                      event.target.value as VideoCompressionEncoderPreset,
+                    );
+                  }}
+                  className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+                >
+                  {compressionEncoderPresetOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-2 text-sm font-medium text-foreground">
+                Video bitrate kbps (optional)
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={compressVideoBitrate}
+                  onChange={(event) => {
+                    setCompressVideoBitrate(event.target.value);
+                  }}
+                  className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+                />
+              </label>
+
+              <label className="grid gap-2 text-sm font-medium text-foreground">
+                Audio bitrate kbps (optional)
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={compressAudioBitrate}
+                  onChange={(event) => {
+                    setCompressAudioBitrate(event.target.value);
+                  }}
+                  className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+                />
+              </label>
+            </div>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Source</p>
+              <p className="mt-2 text-sm font-semibold">
+                {selectedCompressAsset?.originalName ?? "Choose a video"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Target summary</p>
+              <p className="mt-2 text-sm font-semibold">
+                {formatCompressionTargetSummary(compressTargetPlan.target)}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-[1.5rem] bg-white/78 px-4 py-4 text-sm leading-6 text-muted">
+            Output stays MP4 with H.264 video and AAC audio so the result is easier to preview,
+            merge, and deliver.
+          </div>
+
+          {compressTargetPlan.errorMessage ? (
+            <p className="rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
+              {compressTargetPlan.errorMessage}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              void handleCompressJob();
+            }}
+            disabled={busyAction === "compress" || !compressAssetId || !compressTargetPlan.target}
+            className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busyAction === "compress" ? "Queueing compression..." : "Queue compress job"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  function renderExtractFramePanel() {
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Extract frame function"
+          title="Capture one still frame from a video clip"
+          badge="Function"
+        />
+
+        <div className="mt-6 space-y-4">
+          {videoAssets.length > 0 ? (
+            <div className="grid max-h-[18rem] gap-3 overflow-y-auto pr-1">
+              {videoAssets.map((asset) => (
+                <SelectableAssetCard
+                  key={asset.id}
+                  asset={asset}
+                  selected={extractAssetId === asset.id}
+                  inputType="radio"
+                  inputName="extract-asset"
+                  onSelect={() => {
+                    setExtractAssetId(asset.id);
+                    setExtractTimeSeconds(
+                      asset.metadata?.durationSeconds
+                        ? String(Number(Math.min(1, asset.metadata.durationSeconds).toFixed(2)))
+                        : "0",
+                    );
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+              Upload a video clip to enable frame extraction.
+            </div>
+          )}
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Frame time (seconds)
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={extractTimeSeconds}
+                onChange={(event) => {
+                  setExtractTimeSeconds(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Output format
+              <select
+                value={extractFormat}
+                onChange={(event) => {
+                  setExtractFormat(event.target.value as ConvertImageFormat);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {convertFormatOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Fit mode
+              <select
+                value={extractFit}
+                onChange={(event) => {
+                  setExtractFit(event.target.value as ConvertImageFit);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {convertFitOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {extractFormat !== "png" ? (
+              <label className="grid gap-2 text-sm font-medium text-foreground">
+                Quality (1-100)
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  step="1"
+                  value={extractQuality}
+                  onChange={(event) => {
+                    setExtractQuality(event.target.value);
+                  }}
+                  className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+                />
+              </label>
+            ) : (
+              <div className="rounded-[1.5rem] bg-white/78 px-4 py-4 text-sm leading-6 text-muted">
+                PNG ignores quality because it stays lossless.
+              </div>
+            )}
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Width (optional)
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={extractWidth}
+                onChange={(event) => {
+                  setExtractWidth(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Height (optional)
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={extractHeight}
+                onChange={(event) => {
+                  setExtractHeight(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+          </div>
+
+          <label className="grid gap-2 text-sm font-medium text-foreground">
+            Background for JPEG or padded frames
+            <input
+              type="text"
+              value={extractBackground}
+              onChange={(event) => {
+                setExtractBackground(event.target.value);
+              }}
+              className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+            />
+          </label>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Source</p>
+              <p className="mt-2 text-sm font-semibold">
+                {selectedExtractAsset?.originalName ?? "Choose a video"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Target summary</p>
+              <p className="mt-2 text-sm font-semibold">
+                {formatExtractFrameTargetSummary(extractFrameTargetPlan.target)}
+              </p>
+            </div>
+          </div>
+
+          {extractFrameTargetPlan.errorMessage ? (
+            <p className="rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
+              {extractFrameTargetPlan.errorMessage}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              void handleExtractFrameJob();
+            }}
+            disabled={
+              busyAction === "extract-frame" ||
+              !extractAssetId ||
+              !extractFrameTargetPlan.target
+            }
+            className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busyAction === "extract-frame"
+              ? "Queueing frame extraction..."
+              : "Queue extract frame job"}
           </button>
         </div>
       </section>
@@ -2326,6 +3389,14 @@ export function EditorDashboard({
       return renderTrimPanel();
     }
 
+    if (activeView === "compress") {
+      return renderCompressPanel();
+    }
+
+    if (activeView === "extract-frame") {
+      return renderExtractFramePanel();
+    }
+
     if (activeView === "merge") {
       return renderMergePanel();
     }
@@ -2617,6 +3688,20 @@ export function EditorDashboard({
                     >
                       Download
                     </a>
+                    {canRegenerateThumbnail(asset) ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleRegenerateThumbnail(asset);
+                        }}
+                        disabled={busyAction === `thumbnail:${asset.id}`}
+                        className="rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {busyAction === `thumbnail:${asset.id}`
+                          ? "Refreshing preview..."
+                          : "Regenerate preview"}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => {
