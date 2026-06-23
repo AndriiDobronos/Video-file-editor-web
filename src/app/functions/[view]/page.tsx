@@ -7,6 +7,7 @@ export async function generateStaticParams() {
     { view: "trim" },
     { view: "merge" },
     { view: "normalize" },
+    { view: "crop-pad" },
     { view: "convert" },
   ];
 }

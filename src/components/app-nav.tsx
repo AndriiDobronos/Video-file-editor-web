@@ -20,16 +20,29 @@ export function AppNav() {
     "border-[#2f2f2f] bg-[#2f2f2f] text-[#f8f5ef] shadow-[0_12px_30px_rgba(17,17,17,0.14)]";
   const idleButtonClasses =
     "border-panel-border bg-white/80 text-foreground hover:bg-white";
+  const activeTextStyle = { color: "#f8f5ef" } as const;
+  const idleTextStyle = { color: "#111111" } as const;
+  const isWorkspaceActive = isActivePath(pathname, "/");
+  const isJobsActive = isActivePath(pathname, "/jobs");
+  const isDocsActive = isActivePath(pathname, "/docs");
 
   return (
     <nav className="flex flex-wrap items-center gap-2">
       <Link
         href="/"
         className={`relative rounded-full border px-4 py-2 text-sm font-semibold transition ${
-          isActivePath(pathname, "/") ? activeButtonClasses : idleButtonClasses
+          isWorkspaceActive ? activeButtonClasses : idleButtonClasses
         }`}
+        style={isWorkspaceActive ? activeTextStyle : idleTextStyle}
       >
-        <span className="relative z-10">Workspace</span>
+        <span
+          className={`relative z-10 ${
+            isWorkspaceActive ? "!text-[#f8f5ef]" : "text-foreground"
+          }`}
+          style={isWorkspaceActive ? activeTextStyle : idleTextStyle}
+        >
+          Workspace
+        </span>
       </Link>
 
       <details className="relative">
@@ -37,8 +50,14 @@ export function AppNav() {
           className={`list-none rounded-full border px-4 py-2 text-sm font-semibold transition ${
             activeFunction ? activeButtonClasses : idleButtonClasses
           } cursor-pointer`}
+          style={activeFunction ? activeTextStyle : idleTextStyle}
         >
-          <span className="relative z-10">
+          <span
+            className={`relative z-10 ${
+              activeFunction ? "!text-[#f8f5ef]" : "text-foreground"
+            }`}
+            style={activeFunction ? activeTextStyle : idleTextStyle}
+          >
             {activeFunction ? `Function: ${activeFunction.shortLabel}` : "Function"}
           </span>
         </summary>
@@ -48,16 +67,24 @@ export function AppNav() {
             <Link
               key={item.view}
               href={item.href}
+              style={pathname === item.href ? activeTextStyle : idleTextStyle}
               className={`block rounded-[1rem] px-4 py-3 transition ${
                 pathname === item.href
                   ? "bg-[#2f2f2f] text-[#f8f5ef]"
                   : "hover:bg-[#f7f2e8]"
               }`}
             >
-              <p className="text-sm font-semibold">{item.label}</p>
+              <p
+                className={`text-sm font-semibold ${
+                  pathname === item.href ? "!text-[#f8f5ef]" : "text-foreground"
+                }`}
+                style={pathname === item.href ? activeTextStyle : idleTextStyle}
+              >
+                {item.label}
+              </p>
               <p
                 className={`mt-1 text-xs leading-5 ${
-                  pathname === item.href ? "text-white/70" : "text-muted"
+                  pathname === item.href ? "!text-white/70" : "text-muted"
                 }`}
               >
                 {item.description}
@@ -70,19 +97,35 @@ export function AppNav() {
       <Link
         href="/jobs"
         className={`relative rounded-full border px-4 py-2 text-sm font-semibold transition ${
-          isActivePath(pathname, "/jobs") ? activeButtonClasses : idleButtonClasses
+          isJobsActive ? activeButtonClasses : idleButtonClasses
         }`}
+        style={isJobsActive ? activeTextStyle : idleTextStyle}
       >
-        <span className="relative z-10">Jobs</span>
+        <span
+          className={`relative z-10 ${
+            isJobsActive ? "!text-[#f8f5ef]" : "text-foreground"
+          }`}
+          style={isJobsActive ? activeTextStyle : idleTextStyle}
+        >
+          Jobs
+        </span>
       </Link>
 
       <Link
         href="/docs"
         className={`relative rounded-full border px-4 py-2 text-sm font-semibold transition ${
-          isActivePath(pathname, "/docs") ? activeButtonClasses : idleButtonClasses
+          isDocsActive ? activeButtonClasses : idleButtonClasses
         }`}
+        style={isDocsActive ? activeTextStyle : idleTextStyle}
       >
-        <span className="relative z-10">Docs</span>
+        <span
+          className={`relative z-10 ${
+            isDocsActive ? "!text-[#f8f5ef]" : "text-foreground"
+          }`}
+          style={isDocsActive ? activeTextStyle : idleTextStyle}
+        >
+          Docs
+        </span>
       </Link>
     </nav>
   );

@@ -3,6 +3,7 @@ export type EditorView =
   | "trim"
   | "merge"
   | "normalize"
+  | "crop-pad"
   | "convert"
   | "jobs";
 
@@ -35,6 +36,13 @@ export const functionRouteOptions: Array<{
     label: "Normalize for merge",
     shortLabel: "Normalize",
     description: "Align mismatched clips to one merge-ready format.",
+  },
+  {
+    view: "crop-pad",
+    href: "/functions/crop-pad",
+    label: "Crop / pad frame",
+    shortLabel: "Crop/Pad",
+    description: "Trim away frame edges or expand the canvas without changing clip order.",
   },
   {
     view: "convert",
@@ -76,6 +84,12 @@ export const editorViewMeta: Record<
     eyebrow: "Function",
     description:
       "Bring selected clips to one shared format before merge so the export stays stable.",
+  },
+  "crop-pad": {
+    label: "Crop / pad",
+    eyebrow: "Function",
+    description:
+      "Crop one frame tighter or pad it onto a larger canvas before the next export step.",
   },
   convert: {
     label: "Convert",

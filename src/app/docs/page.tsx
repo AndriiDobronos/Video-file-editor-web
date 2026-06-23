@@ -4,7 +4,7 @@ const featureCards = [
   {
     title: "Upload once, reuse everywhere",
     description:
-      "Bring files into one shared workspace, then reuse the same uploads on trim, merge, normalize, convert, and jobs pages.",
+      "Bring files into one shared workspace, then reuse the same uploads on trim, merge, normalize, crop/pad, convert, and jobs pages.",
   },
   {
     title: "Dedicated function pages",
@@ -20,6 +20,11 @@ const featureCards = [
     title: "Merge and download",
     description:
       "Combine prepared clips into one final export, follow the progress, and download the completed result when processing finishes.",
+  },
+  {
+    title: "Crop or expand the frame",
+    description:
+      "Use Crop / Pad when you need to remove extra frame edges or place a file onto a larger canvas before the next step.",
   },
 ];
 
@@ -120,13 +125,13 @@ export default function DocsPage() {
           <li className="rounded-[1.5rem] bg-white/78 p-5">
             <p className="text-sm font-semibold text-foreground">2. Open the dedicated function page.</p>
             <p className="mt-2 text-sm leading-6 text-muted">
-              Use the top navigation to jump directly to Trim, Merge, Normalize, Convert, or Jobs instead of working through one long page.
+              Use the top navigation to jump directly to Trim, Merge, Normalize, Crop / Pad, Convert, or Jobs instead of working through one long page.
             </p>
           </li>
           <li className="rounded-[1.5rem] bg-white/78 p-5">
             <p className="text-sm font-semibold text-foreground">3. Review file details and run the selected action.</p>
             <p className="mt-2 text-sm leading-6 text-muted">
-              Use Trim for one clip, Normalize when Merge reports mismatched clips, or Convert when you need a new image format.
+              Use Trim for one clip, Normalize when Merge reports mismatched clips, Crop / Pad to reshape the frame, or Convert when you need a new image format.
             </p>
           </li>
           <li className="rounded-[1.5rem] bg-white/78 p-5">

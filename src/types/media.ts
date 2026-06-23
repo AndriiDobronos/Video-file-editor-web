@@ -45,6 +45,9 @@ export type NormalizeTargetProfile = {
 
 export type ConvertImageFormat = "png" | "jpeg" | "webp";
 export type ConvertImageFit = "contain" | "cover" | "stretch";
+export type CropPadMode = "crop" | "pad";
+export type CropPadAnchorX = "left" | "center" | "right";
+export type CropPadAnchorY = "top" | "center" | "bottom";
 
 export type ConvertImageTarget = {
   format: ConvertImageFormat;
@@ -55,9 +58,18 @@ export type ConvertImageTarget = {
   background?: string;
 };
 
+export type CropPadTarget = {
+  mode: CropPadMode;
+  width: number;
+  height: number;
+  anchorX?: CropPadAnchorX;
+  anchorY?: CropPadAnchorY;
+  background?: string;
+};
+
 export type ProcessingJob = {
   id: string;
-  type: "trim" | "merge" | "normalize" | "convert-image";
+  type: "trim" | "merge" | "normalize" | "crop-pad" | "convert-image";
   status: "queued" | "processing" | "completed" | "failed";
   sourceAssetIds: string[];
   outputAssetId: string | null;
@@ -71,7 +83,7 @@ export type ProcessingJob = {
     startTime?: number;
     endTime?: number;
     sourceAssetIds?: string[];
-    target?: NormalizeTargetProfile | ConvertImageTarget;
+    target?: NormalizeTargetProfile | CropPadTarget | ConvertImageTarget;
   };
 };
 

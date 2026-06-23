@@ -12,6 +12,10 @@ import type {
   ConvertImageFit,
   ConvertImageFormat,
   ConvertImageTarget,
+  CropPadAnchorX,
+  CropPadAnchorY,
+  CropPadMode,
+  CropPadTarget,
   HealthResponse,
   MediaAsset,
   NormalizeTargetPreset,
@@ -38,7 +42,7 @@ type JobResponse = {
 const statusHighlights = [
   "Shared uploads stay available on every function page",
   "Each tool now opens on its own route instead of one long scroll",
-  "Queue history stays separate so production work feels cleaner",
+  "Crop, pad, trim, convert, and merge all reuse the same shared asset library",
 ];
 
 const normalizeTargetPresetOptions: Array<{
@@ -112,6 +116,41 @@ const convertFitOptions: Array<{
   },
 ];
 
+const cropPadModeOptions: Array<{
+  value: CropPadMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "crop",
+    label: "Crop",
+    description: "Remove frame edges and keep only the selected inner area.",
+  },
+  {
+    value: "pad",
+    label: "Pad",
+    description: "Place the source on a larger canvas without scaling it first.",
+  },
+];
+
+const cropPadHorizontalAnchorOptions: Array<{
+  value: CropPadAnchorX;
+  label: string;
+}> = [
+  { value: "left", label: "Left" },
+  { value: "center", label: "Center" },
+  { value: "right", label: "Right" },
+];
+
+const cropPadVerticalAnchorOptions: Array<{
+  value: CropPadAnchorY;
+  label: string;
+}> = [
+  { value: "top", label: "Top" },
+  { value: "center", label: "Center" },
+  { value: "bottom", label: "Bottom" },
+];
+
 type MergeCompatibilityCheck = {
   label: string;
   readValue: (asset: MediaAsset) => string;
@@ -155,6 +194,13 @@ const sessionStorageKeys = {
   trimAssetId: "vfe:trim-asset-id",
   mergeAssetIds: "vfe:merge-asset-ids",
   normalizePreset: "vfe:normalize-preset",
+  cropPadAssetId: "vfe:crop-pad-asset-id",
+  cropPadMode: "vfe:crop-pad-mode",
+  cropPadWidth: "vfe:crop-pad-width",
+  cropPadHeight: "vfe:crop-pad-height",
+  cropPadAnchorX: "vfe:crop-pad-anchor-x",
+  cropPadAnchorY: "vfe:crop-pad-anchor-y",
+  cropPadBackground: "vfe:crop-pad-background",
   convertAssetId: "vfe:convert-asset-id",
   convertFormat: "vfe:convert-format",
   convertQuality: "vfe:convert-quality",
@@ -275,6 +321,10 @@ function isVideoAsset(asset: MediaAsset) {
     asset.mimeType.toLowerCase().startsWith("video/") ||
     Boolean(asset.metadata?.videoCodec)
   );
+}
+
+function isCropPadEligibleAsset(asset: MediaAsset) {
+  return isVideoAsset(asset) || isImageAsset(asset);
 }
 
 function getSuggestedTrimEndTime(asset: MediaAsset | undefined) {
@@ -510,6 +560,135 @@ function formatConvertTargetSummary(target: ConvertImageTarget | null) {
   return details.join(" | ");
 }
 
+function buildCropPadTargetPlan(input: {
+  asset: MediaAsset | null;
+  mode: CropPadMode;
+  width: string;
+  height: string;
+  anchorX: CropPadAnchorX;
+  anchorY: CropPadAnchorY;
+  background: string;
+}) {
+  if (!input.asset) {
+    return {
+      target: null,
+      errorMessage: "Choose one image or video file before preparing crop / pad.",
+    };
+  }
+
+  const widthResult = parseOptionalPositiveInteger(input.width);
+  const heightResult = parseOptionalPositiveInteger(input.height);
+  const errorMessage = widthResult.error ?? heightResult.error ?? null;
+
+  if (errorMessage) {
+    return {
+      target: null,
+      errorMessage,
+    };
+  }
+
+  if (!widthResult.value || !heightResult.value) {
+    return {
+      target: null,
+      errorMessage: "Enter both width and height for crop / pad.",
+    };
+  }
+
+  const background = input.background.trim();
+
+  if (background && !/^#[0-9a-fA-F]{6}$/.test(background)) {
+    return {
+      target: null,
+      errorMessage: "Background must use a six-digit hex color such as #111111.",
+    };
+  }
+
+  const sourceWidth = input.asset.metadata?.width ?? null;
+  const sourceHeight = input.asset.metadata?.height ?? null;
+
+  if (!sourceWidth || !sourceHeight) {
+    return {
+      target: null,
+      errorMessage:
+        "The selected file is missing width or height metadata. Re-upload it before crop / pad.",
+    };
+  }
+
+  if (
+    isVideoAsset(input.asset) &&
+    (widthResult.value % 2 !== 0 || heightResult.value % 2 !== 0)
+  ) {
+    return {
+      target: null,
+      errorMessage: "Video crop / pad targets must use even width and height values.",
+    };
+  }
+
+  if (widthResult.value === sourceWidth && heightResult.value === sourceHeight) {
+    return {
+      target: null,
+      errorMessage: "Target size matches the source. Change at least one dimension.",
+    };
+  }
+
+  if (
+    input.mode === "crop" &&
+    (widthResult.value > sourceWidth || heightResult.value > sourceHeight)
+  ) {
+    return {
+      target: null,
+      errorMessage: "Crop target cannot be larger than the current frame.",
+    };
+  }
+
+  if (
+    input.mode === "pad" &&
+    (widthResult.value < sourceWidth || heightResult.value < sourceHeight)
+  ) {
+    return {
+      target: null,
+      errorMessage: "Pad target cannot be smaller than the current frame.",
+    };
+  }
+
+  const target: CropPadTarget = {
+    mode: input.mode,
+    width: widthResult.value,
+    height: heightResult.value,
+    anchorX: input.anchorX,
+    anchorY: input.anchorY,
+  };
+
+  if (input.mode === "pad" && background) {
+    target.background = background;
+  }
+
+  return {
+    target,
+    errorMessage: null,
+  };
+}
+
+function formatCropPadTargetSummary(
+  asset: MediaAsset | null,
+  target: CropPadTarget | null,
+) {
+  if (!target) {
+    return "Target is unavailable.";
+  }
+
+  const details = [
+    target.mode === "crop"
+      ? `Crop to ${target.width}x${target.height}`
+      : `Pad to ${target.width}x${target.height}`,
+    `${target.anchorX ?? "center"} / ${target.anchorY ?? "center"}`,
+    target.background ? `Background: ${target.background}` : null,
+    asset && isVideoAsset(asset) ? "MP4 export" : "Keep original image format",
+  ].filter((value): value is string => Boolean(value));
+
+  return details.join(" | ");
+}
+
 function getJobTypeLabel(type: ProcessingJob["type"]) {
   switch (type) {
     case "trim":
@@ -518,6 +697,8 @@ function getJobTypeLabel(type: ProcessingJob["type"]) {
       return "Merge job";
     case "normalize":
       return "Normalize job";
+    case "crop-pad":
+      return "Crop / pad job";
     case "convert-image":
       return "Convert image job";
     default:
@@ -659,6 +840,8 @@ export function EditorDashboard({
     "border-[#2f2f2f] bg-[#2f2f2f] text-[#f8f5ef] shadow-[0_12px_30px_rgba(17,17,17,0.14)]";
   const idleRouteChipClasses =
     "border-panel-border bg-white/80 text-foreground hover:bg-white";
+  const activeRouteTextStyle = { color: "#f8f5ef" } as const;
+  const idleRouteTextStyle = { color: "#111111" } as const;
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [assets, setAssets] = useState<MediaAsset[]>([]);
   const [jobs, setJobs] = useState<ProcessingJob[]>([]);
@@ -680,6 +863,36 @@ export function EditorDashboard({
         ) as NormalizeTargetPreset),
     );
   const [isMergeHelpOpen, setIsMergeHelpOpen] = useState(false);
+  const [cropPadAssetId, setCropPadAssetId] = useState(() =>
+    readSessionString(sessionStorageKeys.cropPadAssetId, ""),
+  );
+  const [cropPadMode, setCropPadMode] = useState<CropPadMode>(
+    () =>
+      readSessionString(sessionStorageKeys.cropPadMode, "crop") as CropPadMode,
+  );
+  const [cropPadWidth, setCropPadWidth] = useState(() =>
+    readSessionString(sessionStorageKeys.cropPadWidth, ""),
+  );
+  const [cropPadHeight, setCropPadHeight] = useState(() =>
+    readSessionString(sessionStorageKeys.cropPadHeight, ""),
+  );
+  const [cropPadAnchorX, setCropPadAnchorX] = useState<CropPadAnchorX>(
+    () =>
+      readSessionString(
+        sessionStorageKeys.cropPadAnchorX,
+        "center",
+      ) as CropPadAnchorX,
+  );
+  const [cropPadAnchorY, setCropPadAnchorY] = useState<CropPadAnchorY>(
+    () =>
+      readSessionString(
+        sessionStorageKeys.cropPadAnchorY,
+        "center",
+      ) as CropPadAnchorY,
+  );
+  const [cropPadBackground, setCropPadBackground] = useState(() =>
+    readSessionString(sessionStorageKeys.cropPadBackground, "#111111"),
+  );
   const [convertAssetId, setConvertAssetId] = useState(() =>
     readSessionString(sessionStorageKeys.convertAssetId, ""),
   );
@@ -722,6 +935,7 @@ export function EditorDashboard({
   );
   const videoAssets = assets.filter(isVideoAsset);
   const imageAssets = assets.filter(isImageAsset);
+  const cropPadAssets = assets.filter(isCropPadEligibleAsset);
   const selectedMergeAssets = videoAssets.filter((asset) =>
     mergeAssetIds.includes(asset.id),
   );
@@ -735,6 +949,17 @@ export function EditorDashboard({
   const selectedNormalizePreset = normalizeTargetPresetOptions.find(
     (option) => option.value === normalizePreset,
   );
+  const selectedCropPadAsset =
+    cropPadAssets.find((asset) => asset.id === cropPadAssetId) ?? null;
+  const cropPadTargetPlan = buildCropPadTargetPlan({
+    asset: selectedCropPadAsset,
+    mode: cropPadMode,
+    width: cropPadWidth,
+    height: cropPadHeight,
+    anchorX: cropPadAnchorX,
+    anchorY: cropPadAnchorY,
+    background: cropPadBackground,
+  });
   const convertTargetPlan = buildConvertTargetPlan({
     format: convertFormat,
     quality: convertQuality,
@@ -752,12 +977,16 @@ export function EditorDashboard({
       setAssets(nextAssets);
 
       const nextVideoAssets = nextAssets.filter(isVideoAsset);
+      const nextCropPadAssets = nextAssets.filter(isCropPadEligibleAsset);
       const nextImageAssets = nextAssets.filter(isImageAsset);
 
       if (nextAssets.length === 0) {
         setTrimAssetId("");
         setTrimEndTime("5");
         setMergeAssetIds([]);
+        setCropPadAssetId("");
+        setCropPadWidth("");
+        setCropPadHeight("");
         setConvertAssetId("");
         return;
       }
@@ -788,6 +1017,25 @@ export function EditorDashboard({
 
       if (!hasSelectedConvertAsset) {
         setConvertAssetId(nextImageAssets[0]?.id ?? "");
+      }
+
+      const hasSelectedCropPadAsset = nextCropPadAssets.some(
+        (asset) => asset.id === cropPadAssetId,
+      );
+
+      if (!hasSelectedCropPadAsset) {
+        const nextCropPadAsset = nextCropPadAssets[0];
+        setCropPadAssetId(nextCropPadAsset?.id ?? "");
+        setCropPadWidth(
+          nextCropPadAsset?.metadata?.width
+            ? String(nextCropPadAsset.metadata.width)
+            : "",
+        );
+        setCropPadHeight(
+          nextCropPadAsset?.metadata?.height
+            ? String(nextCropPadAsset.metadata.height)
+            : "",
+        );
       }
     });
   }
@@ -923,6 +1171,37 @@ export function EditorDashboard({
       normalizePreset,
     );
   }, [normalizePreset]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(sessionStorageKeys.cropPadAssetId, cropPadAssetId);
+  }, [cropPadAssetId]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(sessionStorageKeys.cropPadMode, cropPadMode);
+  }, [cropPadMode]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(sessionStorageKeys.cropPadWidth, cropPadWidth);
+  }, [cropPadWidth]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(sessionStorageKeys.cropPadHeight, cropPadHeight);
+  }, [cropPadHeight]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(sessionStorageKeys.cropPadAnchorX, cropPadAnchorX);
+  }, [cropPadAnchorX]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(sessionStorageKeys.cropPadAnchorY, cropPadAnchorY);
+  }, [cropPadAnchorY]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(
+      sessionStorageKeys.cropPadBackground,
+      cropPadBackground,
+    );
+  }, [cropPadBackground]);
 
   useEffect(() => {
     window.sessionStorage.setItem(sessionStorageKeys.convertAssetId, convertAssetId);
@@ -1110,6 +1389,50 @@ export function EditorDashboard({
     }
   }
 
+  function handleCropPadAssetSelect(asset: MediaAsset) {
+    setCropPadAssetId(asset.id);
+    setCropPadWidth(asset.metadata?.width ? String(asset.metadata.width) : "");
+    setCropPadHeight(asset.metadata?.height ? String(asset.metadata.height) : "");
+  }
+
+  async function handleCropPadJob() {
+    if (!cropPadAssetId) {
+      setErrorMessage("Choose one image or video file before queueing crop / pad.");
+      return;
+    }
+
+    if (!cropPadTargetPlan.target) {
+      setErrorMessage(
+        cropPadTargetPlan.errorMessage ?? "Crop / pad target could not be prepared.",
+      );
+      return;
+    }
+
+    setBusyAction("crop-pad");
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Preparing your crop / pad request.");
+      const response = await fetchJson<JobResponse>("/api/v1/jobs/crop-pad", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          assetId: cropPadAssetId,
+          target: cropPadTargetPlan.target,
+        }),
+      });
+
+      await loadJobs();
+      setFeedback(`Crop / pad job ${response.item.id.slice(0, 8)} has been queued.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Crop / pad job failed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   async function handleConvertJob() {
     if (!convertAssetId) {
       setErrorMessage("Choose an uploaded image before creating a convert job.");
@@ -1210,8 +1533,9 @@ export function EditorDashboard({
           <Link
             href="/jobs"
             className="rounded-[1.4rem] border border-panel-border bg-[#111111] p-5 text-white transition hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(17,17,17,0.14)]"
+            style={activeRouteTextStyle}
           >
-            <p className="text-lg font-semibold">Open jobs queue</p>
+            <p className="text-lg font-semibold text-white">Open jobs queue</p>
             <p className="mt-2 text-sm leading-6 text-white/70">
               Review processing history, track current jobs, and download finished results without leaving the shared upload space.
             </p>
@@ -1485,6 +1809,211 @@ export function EditorDashboard({
     );
   }
 
+  function renderCropPadPanel() {
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Crop / pad function"
+          title="Tighten the frame or place it on a larger canvas"
+          badge="Function"
+        />
+
+        <div className="mt-6 space-y-4">
+          {cropPadAssets.length > 0 ? (
+            <div className="grid max-h-[16rem] gap-3 overflow-y-auto pr-1">
+              {cropPadAssets.map((asset) => (
+                <SelectableAssetCard
+                  key={asset.id}
+                  asset={asset}
+                  selected={cropPadAssetId === asset.id}
+                  inputType="radio"
+                  inputName="crop-pad-asset"
+                  onSelect={() => {
+                    handleCropPadAssetSelect(asset);
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+              Upload a video clip or supported image to enable crop / pad.
+            </div>
+          )}
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Mode
+              <select
+                value={cropPadMode}
+                onChange={(event) => {
+                  setCropPadMode(event.target.value as CropPadMode);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {cropPadModeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="rounded-[1.5rem] bg-white/78 px-4 py-4">
+              <p className="text-sm font-semibold text-foreground">
+                {cropPadModeOptions.find((option) => option.value === cropPadMode)?.label}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-muted">
+                {cropPadModeOptions.find((option) => option.value === cropPadMode)
+                  ?.description ??
+                  "Choose whether to remove frame edges or add canvas space."}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Width
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={cropPadWidth}
+                onChange={(event) => {
+                  setCropPadWidth(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Height
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={cropPadHeight}
+                onChange={(event) => {
+                  setCropPadHeight(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Horizontal anchor
+              <select
+                value={cropPadAnchorX}
+                onChange={(event) => {
+                  setCropPadAnchorX(event.target.value as CropPadAnchorX);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {cropPadHorizontalAnchorOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Vertical anchor
+              <select
+                value={cropPadAnchorY}
+                onChange={(event) => {
+                  setCropPadAnchorY(event.target.value as CropPadAnchorY);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {cropPadVerticalAnchorOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {cropPadMode === "pad" ? (
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Background color
+              <input
+                type="text"
+                value={cropPadBackground}
+                onChange={(event) => {
+                  setCropPadBackground(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Source</p>
+              <p className="mt-2 text-sm font-semibold">
+                {selectedCropPadAsset?.metadata?.width && selectedCropPadAsset?.metadata?.height
+                  ? `${selectedCropPadAsset.metadata.width}x${selectedCropPadAsset.metadata.height}`
+                  : "Choose a file"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Output rule</p>
+              <p className="mt-2 text-sm font-semibold">
+                {formatCropPadTargetSummary(
+                  selectedCropPadAsset,
+                  cropPadTargetPlan.target,
+                )}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">File type</p>
+              <p className="mt-2 text-sm font-semibold">
+                {selectedCropPadAsset
+                  ? isVideoAsset(selectedCropPadAsset)
+                    ? "Video"
+                    : "Image"
+                  : "Unavailable"}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-[1.5rem] bg-white/78 px-4 py-4 text-sm leading-6 text-muted">
+            {selectedCropPadAsset && isVideoAsset(selectedCropPadAsset) ? (
+              <p>
+                Video outputs stay MP4/H.264/AAC, so width and height should use even numbers.
+              </p>
+            ) : (
+              <p>
+                Image outputs keep the original format. Use Convert when you also need PNG, JPEG,
+                or WebP format switching.
+              </p>
+            )}
+          </div>
+
+          {cropPadTargetPlan.errorMessage ? (
+            <p className="rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
+              {cropPadTargetPlan.errorMessage}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              void handleCropPadJob();
+            }}
+            disabled={busyAction === "crop-pad" || !cropPadAssetId || !cropPadTargetPlan.target}
+            className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busyAction === "crop-pad" ? "Queueing crop / pad..." : "Queue crop / pad job"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
   function renderConvertPanel() {
     return (
       <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
@@ -1735,6 +2264,10 @@ export function EditorDashboard({
       return renderNormalizePanel();
     }
 
+    if (activeView === "crop-pad") {
+      return renderCropPadPanel();
+    }
+
     if (activeView === "convert") {
       return renderConvertPanel();
     }
@@ -1779,8 +2312,16 @@ export function EditorDashboard({
                     className={`relative rounded-full border px-4 py-2 text-sm font-semibold transition ${
                       isActive ? activeRouteChipClasses : idleRouteChipClasses
                     }`}
+                    style={isActive ? activeRouteTextStyle : idleRouteTextStyle}
                   >
-                    <span className="relative z-10">{item.shortLabel}</span>
+                    <span
+                      className={`relative z-10 ${
+                        isActive ? "!text-[#f8f5ef]" : "text-foreground"
+                      }`}
+                      style={isActive ? activeRouteTextStyle : idleRouteTextStyle}
+                    >
+                      {item.shortLabel}
+                    </span>
                   </Link>
                 );
               })}
@@ -1792,8 +2333,20 @@ export function EditorDashboard({
                     ? activeRouteChipClasses
                     : idleRouteChipClasses
                 }`}
+                style={
+                  activeView === "jobs" ? activeRouteTextStyle : idleRouteTextStyle
+                }
               >
-                <span className="relative z-10">Jobs</span>
+                <span
+                  className={`relative z-10 ${
+                    activeView === "jobs" ? "!text-[#f8f5ef]" : "text-foreground"
+                  }`}
+                  style={
+                    activeView === "jobs" ? activeRouteTextStyle : idleRouteTextStyle
+                  }
+                >
+                  Jobs
+                </span>
               </Link>
             </div>
           </div>

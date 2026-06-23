@@ -1,6 +1,6 @@
 # Video File Editor Web
 
-Video File Editor Web is the user-facing workspace for uploading, trimming, normalizing, merging, and downloading video files.
+Video File Editor Web is the user-facing workspace for uploading, trimming, normalizing, crop/pad editing, converting, merging, and downloading media files.
 
 ## What users can do
 
@@ -8,6 +8,8 @@ Video File Editor Web is the user-facing workspace for uploading, trimming, norm
 - Review duration, resolution, size, and codec details before export
 - Trim a clip to an exact time range
 - Normalize clips when merge is blocked by mismatched formats
+- Crop a frame tighter or pad it onto a larger canvas
+- Convert PNG, JPEG, and WebP files into another still-image format
 - Merge prepared clips into one final video
 - Download finished results and remove files that are no longer needed
 
@@ -16,9 +18,10 @@ Video File Editor Web is the user-facing workspace for uploading, trimming, norm
 1. Upload your source clips.
 2. Review the file details shown in the asset list.
 3. Trim any clip that needs a shorter export.
-4. If merge is blocked, run `Normalize for merge` with the preset that fits your goal.
-5. Merge the prepared clips.
-6. Download the finished result from the processing history.
+4. Use `Crop / pad frame` when you need to reshape the canvas before the next step.
+5. If merge is blocked, run `Normalize for merge` with the preset that fits your goal.
+6. Merge the prepared clips or convert supported images.
+7. Download the finished result from the processing history.
 
 ## Normalize presets
 
