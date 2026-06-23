@@ -846,88 +846,34 @@ export function EditorDashboard({
   const [assets, setAssets] = useState<MediaAsset[]>([]);
   const [jobs, setJobs] = useState<ProcessingJob[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [trimAssetId, setTrimAssetId] = useState(() =>
-    readSessionString(sessionStorageKeys.trimAssetId, ""),
-  );
+  const [trimAssetId, setTrimAssetId] = useState("");
   const [trimStartTime, setTrimStartTime] = useState("0");
   const [trimEndTime, setTrimEndTime] = useState("5");
-  const [mergeAssetIds, setMergeAssetIds] = useState<string[]>(() =>
-    readSessionStringArray(sessionStorageKeys.mergeAssetIds),
-  );
+  const [mergeAssetIds, setMergeAssetIds] = useState<string[]>([]);
   const [normalizePreset, setNormalizePreset] =
-    useState<NormalizeTargetPreset>(
-      () =>
-        (readSessionString(
-          sessionStorageKeys.normalizePreset,
-          "hd-720p",
-        ) as NormalizeTargetPreset),
-    );
+    useState<NormalizeTargetPreset>("hd-720p");
   const [isMergeHelpOpen, setIsMergeHelpOpen] = useState(false);
-  const [cropPadAssetId, setCropPadAssetId] = useState(() =>
-    readSessionString(sessionStorageKeys.cropPadAssetId, ""),
-  );
-  const [cropPadMode, setCropPadMode] = useState<CropPadMode>(
-    () =>
-      readSessionString(sessionStorageKeys.cropPadMode, "crop") as CropPadMode,
-  );
-  const [cropPadWidth, setCropPadWidth] = useState(() =>
-    readSessionString(sessionStorageKeys.cropPadWidth, ""),
-  );
-  const [cropPadHeight, setCropPadHeight] = useState(() =>
-    readSessionString(sessionStorageKeys.cropPadHeight, ""),
-  );
-  const [cropPadAnchorX, setCropPadAnchorX] = useState<CropPadAnchorX>(
-    () =>
-      readSessionString(
-        sessionStorageKeys.cropPadAnchorX,
-        "center",
-      ) as CropPadAnchorX,
-  );
-  const [cropPadAnchorY, setCropPadAnchorY] = useState<CropPadAnchorY>(
-    () =>
-      readSessionString(
-        sessionStorageKeys.cropPadAnchorY,
-        "center",
-      ) as CropPadAnchorY,
-  );
-  const [cropPadBackground, setCropPadBackground] = useState(() =>
-    readSessionString(sessionStorageKeys.cropPadBackground, "#111111"),
-  );
-  const [convertAssetId, setConvertAssetId] = useState(() =>
-    readSessionString(sessionStorageKeys.convertAssetId, ""),
-  );
-  const [convertFormat, setConvertFormat] = useState<ConvertImageFormat>(
-    () =>
-      readSessionString(
-        sessionStorageKeys.convertFormat,
-        "webp",
-      ) as ConvertImageFormat,
-  );
-  const [convertQuality, setConvertQuality] = useState(() =>
-    readSessionString(sessionStorageKeys.convertQuality, "92"),
-  );
-  const [convertWidth, setConvertWidth] = useState(() =>
-    readSessionString(sessionStorageKeys.convertWidth, ""),
-  );
-  const [convertHeight, setConvertHeight] = useState(() =>
-    readSessionString(sessionStorageKeys.convertHeight, ""),
-  );
-  const [convertFit, setConvertFit] = useState<ConvertImageFit>(
-    () =>
-      readSessionString(
-        sessionStorageKeys.convertFit,
-        "contain",
-      ) as ConvertImageFit,
-  );
-  const [convertBackground, setConvertBackground] = useState(() =>
-    readSessionString(sessionStorageKeys.convertBackground, "#ffffff"),
-  );
+  const [cropPadAssetId, setCropPadAssetId] = useState("");
+  const [cropPadMode, setCropPadMode] = useState<CropPadMode>("crop");
+  const [cropPadWidth, setCropPadWidth] = useState("");
+  const [cropPadHeight, setCropPadHeight] = useState("");
+  const [cropPadAnchorX, setCropPadAnchorX] = useState<CropPadAnchorX>("center");
+  const [cropPadAnchorY, setCropPadAnchorY] = useState<CropPadAnchorY>("center");
+  const [cropPadBackground, setCropPadBackground] = useState("#111111");
+  const [convertAssetId, setConvertAssetId] = useState("");
+  const [convertFormat, setConvertFormat] = useState<ConvertImageFormat>("webp");
+  const [convertQuality, setConvertQuality] = useState("92");
+  const [convertWidth, setConvertWidth] = useState("");
+  const [convertHeight, setConvertHeight] = useState("");
+  const [convertFit, setConvertFit] = useState<ConvertImageFit>("contain");
+  const [convertBackground, setConvertBackground] = useState("#ffffff");
   const [feedback, setFeedback] = useState(
     "Upload files once, then open only the function page you need for the next step.",
   );
   const [errorMessage, setErrorMessage] = useState("");
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const [hasRestoredSession, setHasRestoredSession] = useState(false);
   const [isRefreshing, startRefreshTransition] = useTransition();
 
   const hasProcessingJobs = jobs.some(
@@ -1079,6 +1025,62 @@ export function EditorDashboard({
   }
 
   useEffect(() => {
+    setTrimAssetId(readSessionString(sessionStorageKeys.trimAssetId, ""));
+    setMergeAssetIds(readSessionStringArray(sessionStorageKeys.mergeAssetIds));
+    setNormalizePreset(
+      readSessionString(
+        sessionStorageKeys.normalizePreset,
+        "hd-720p",
+      ) as NormalizeTargetPreset,
+    );
+    setCropPadAssetId(readSessionString(sessionStorageKeys.cropPadAssetId, ""));
+    setCropPadMode(
+      readSessionString(sessionStorageKeys.cropPadMode, "crop") as CropPadMode,
+    );
+    setCropPadWidth(readSessionString(sessionStorageKeys.cropPadWidth, ""));
+    setCropPadHeight(readSessionString(sessionStorageKeys.cropPadHeight, ""));
+    setCropPadAnchorX(
+      readSessionString(
+        sessionStorageKeys.cropPadAnchorX,
+        "center",
+      ) as CropPadAnchorX,
+    );
+    setCropPadAnchorY(
+      readSessionString(
+        sessionStorageKeys.cropPadAnchorY,
+        "center",
+      ) as CropPadAnchorY,
+    );
+    setCropPadBackground(
+      readSessionString(sessionStorageKeys.cropPadBackground, "#111111"),
+    );
+    setConvertAssetId(readSessionString(sessionStorageKeys.convertAssetId, ""));
+    setConvertFormat(
+      readSessionString(
+        sessionStorageKeys.convertFormat,
+        "webp",
+      ) as ConvertImageFormat,
+    );
+    setConvertQuality(readSessionString(sessionStorageKeys.convertQuality, "92"));
+    setConvertWidth(readSessionString(sessionStorageKeys.convertWidth, ""));
+    setConvertHeight(readSessionString(sessionStorageKeys.convertHeight, ""));
+    setConvertFit(
+      readSessionString(
+        sessionStorageKeys.convertFit,
+        "contain",
+      ) as ConvertImageFit,
+    );
+    setConvertBackground(
+      readSessionString(sessionStorageKeys.convertBackground, "#ffffff"),
+    );
+    setHasRestoredSession(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     let isActive = true;
 
     async function loadInitialData() {
@@ -1119,10 +1121,10 @@ export function EditorDashboard({
     return () => {
       isActive = false;
     };
-  }, []);
+  }, [hasRestoredSession]);
 
   useEffect(() => {
-    if (!hasProcessingJobs) {
+    if (!hasRestoredSession || !hasProcessingJobs) {
       return;
     }
 
@@ -1146,7 +1148,7 @@ export function EditorDashboard({
       isActive = false;
       window.clearInterval(intervalId);
     };
-  }, [hasProcessingJobs, startRefreshTransition]);
+  }, [hasProcessingJobs, hasRestoredSession, startRefreshTransition]);
 
   useEffect(() => {
     if (!mergeRequiresNormalization) {
@@ -1155,84 +1157,152 @@ export function EditorDashboard({
   }, [mergeRequiresNormalization]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(sessionStorageKeys.trimAssetId, trimAssetId);
-  }, [trimAssetId]);
+  }, [hasRestoredSession, trimAssetId]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(
       sessionStorageKeys.mergeAssetIds,
       JSON.stringify(mergeAssetIds),
     );
-  }, [mergeAssetIds]);
+  }, [hasRestoredSession, mergeAssetIds]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(
       sessionStorageKeys.normalizePreset,
       normalizePreset,
     );
-  }, [normalizePreset]);
+  }, [hasRestoredSession, normalizePreset]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(sessionStorageKeys.cropPadAssetId, cropPadAssetId);
-  }, [cropPadAssetId]);
+  }, [hasRestoredSession, cropPadAssetId]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(sessionStorageKeys.cropPadMode, cropPadMode);
-  }, [cropPadMode]);
+  }, [hasRestoredSession, cropPadMode]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(sessionStorageKeys.cropPadWidth, cropPadWidth);
-  }, [cropPadWidth]);
+  }, [hasRestoredSession, cropPadWidth]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(sessionStorageKeys.cropPadHeight, cropPadHeight);
-  }, [cropPadHeight]);
+  }, [hasRestoredSession, cropPadHeight]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(sessionStorageKeys.cropPadAnchorX, cropPadAnchorX);
-  }, [cropPadAnchorX]);
+  }, [hasRestoredSession, cropPadAnchorX]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(sessionStorageKeys.cropPadAnchorY, cropPadAnchorY);
-  }, [cropPadAnchorY]);
+  }, [hasRestoredSession, cropPadAnchorY]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(
       sessionStorageKeys.cropPadBackground,
       cropPadBackground,
     );
-  }, [cropPadBackground]);
+  }, [hasRestoredSession, cropPadBackground]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(sessionStorageKeys.convertAssetId, convertAssetId);
-  }, [convertAssetId]);
+  }, [hasRestoredSession, convertAssetId]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(sessionStorageKeys.convertFormat, convertFormat);
-  }, [convertFormat]);
+  }, [hasRestoredSession, convertFormat]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(sessionStorageKeys.convertQuality, convertQuality);
-  }, [convertQuality]);
+  }, [hasRestoredSession, convertQuality]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(sessionStorageKeys.convertWidth, convertWidth);
-  }, [convertWidth]);
+  }, [hasRestoredSession, convertWidth]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(sessionStorageKeys.convertHeight, convertHeight);
-  }, [convertHeight]);
+  }, [hasRestoredSession, convertHeight]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(sessionStorageKeys.convertFit, convertFit);
-  }, [convertFit]);
+  }, [hasRestoredSession, convertFit]);
 
   useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
     window.sessionStorage.setItem(
       sessionStorageKeys.convertBackground,
       convertBackground,
     );
-  }, [convertBackground]);
+  }, [hasRestoredSession, convertBackground]);
 
   async function handleUpload() {
     if (selectedFiles.length === 0) {
