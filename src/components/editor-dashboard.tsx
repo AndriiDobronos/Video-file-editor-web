@@ -148,6 +148,76 @@ function formatDuration(seconds: number | null | undefined) {
   return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
+function formatResolutionLabel(asset: MediaAsset) {
+  if (!asset.metadata?.width || !asset.metadata?.height) {
+    return null;
+  }
+
+  return `${asset.metadata.width}x${asset.metadata.height}`;
+}
+
+function formatCodecLabel(asset: MediaAsset) {
+  const codecs = [asset.metadata?.videoCodec, asset.metadata?.audioCodec].filter(
+    (value): value is string => Boolean(value),
+  );
+
+  if (codecs.length === 0) {
+    return null;
+  }
+
+  return codecs.join(" / ");
+}
+
+function formatAssetSummary(asset: MediaAsset) {
+  const details = [
+    asset.metadata?.durationSeconds !== null && asset.metadata?.durationSeconds !== undefined
+      ? formatDuration(asset.metadata.durationSeconds)
+      : null,
+    formatResolutionLabel(asset),
+    formatCodecLabel(asset),
+    formatBytes(asset.sizeBytes),
+  ].filter((value): value is string => Boolean(value));
+
+  return details.join(" | ");
+}
+
+function AssetThumbnail({
+  asset,
+  compact = false,
+}: {
+  asset: MediaAsset;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={
+        compact
+          ? "h-14 w-20 overflow-hidden rounded-[0.9rem] bg-[#111111] sm:h-16 sm:w-24"
+          : "h-20 w-full overflow-hidden rounded-[1rem] bg-[#111111] sm:h-24 sm:w-36"
+      }
+    >
+      {asset.thumbnailUrl ? (
+        <img
+          src={toApiUrl(asset.thumbnailUrl)}
+          alt={`${asset.originalName} preview`}
+          className="h-full w-full object-cover"
+          loading="lazy"
+        />
+      ) : (
+        <div
+          className={
+            compact
+              ? "flex h-full w-full items-center justify-center bg-[#181818] px-2 text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-white/70"
+              : "flex h-full w-full items-center justify-center bg-[#181818] px-3 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70"
+          }
+        >
+          {asset.kind}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function formatStatusLabel(status: ProcessingJob["status"]) {
   switch (status) {
     case "queued":
@@ -873,26 +943,39 @@ export function EditorDashboard() {
           <div className="mt-6 grid gap-4">
             {assets.length > 0 ? (
               assets.map((asset) => (
-                <article key={asset.id} className="rounded-[1.5rem] bg-white/78 p-5 shadow-sm">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
+                <article
+                  key={asset.id}
+                  className="rounded-[1.2rem] border border-panel-border bg-white/84 p-3 shadow-sm"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <AssetThumbnail asset={asset} />
+
+                    <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-lg font-semibold">{asset.originalName}</p>
-                        <span className="rounded-full bg-[#111111] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">
+                        <p className="truncate text-sm font-semibold text-foreground sm:text-base">
+                          {asset.originalName}
+                        </p>
+                        <span className="rounded-full bg-[#111111] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
                           {asset.kind}
                         </span>
-                        <span className="rounded-full bg-[#f3ede4] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">
+                        <span className="rounded-full bg-[#f3ede4] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
                           {asset.storageDriver ?? "local"}
                         </span>
                       </div>
-                      <p className="mt-1 text-sm text-muted">
+
+                      <p className="mt-1 truncate text-xs uppercase tracking-[0.14em] text-muted">
                         {asset.metadata?.formatName ?? asset.mimeType}
                       </p>
+
+                      <p className="mt-2 text-sm leading-6 text-muted">
+                        {formatAssetSummary(asset)}
+                      </p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+
+                    <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-stretch">
                       <a
                         href={toApiUrl(asset.downloadUrl)}
-                        className="rounded-full border border-panel-border px-4 py-2 text-sm font-semibold text-foreground"
+                        className="rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground"
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -908,33 +991,6 @@ export function EditorDashboard() {
                       >
                         {busyAction === `delete:${asset.id}` ? "Deleting..." : "Delete"}
                       </button>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
-                      <p className="text-xs uppercase tracking-[0.16em] text-muted">Duration</p>
-                      <p className="mt-2 text-sm font-semibold">
-                        {formatDuration(asset.metadata?.durationSeconds)}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
-                      <p className="text-xs uppercase tracking-[0.16em] text-muted">Resolution</p>
-                      <p className="mt-2 text-sm font-semibold">
-                        {asset.metadata?.width && asset.metadata?.height
-                          ? `${asset.metadata.width}x${asset.metadata.height}`
-                          : "Unknown"}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
-                      <p className="text-xs uppercase tracking-[0.16em] text-muted">Codec</p>
-                      <p className="mt-2 text-sm font-semibold">
-                        {asset.metadata?.videoCodec ?? asset.metadata?.audioCodec ?? "Unknown"}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
-                      <p className="text-xs uppercase tracking-[0.16em] text-muted">Size</p>
-                      <p className="mt-2 text-sm font-semibold">{formatBytes(asset.sizeBytes)}</p>
                     </div>
                   </div>
                 </article>
@@ -1053,7 +1109,7 @@ export function EditorDashboard() {
                 return (
                   <label
                     key={asset.id}
-                    className="flex items-start gap-3 rounded-[1.5rem] bg-white/75 px-4 py-4"
+                    className="flex items-center gap-3 rounded-[1.25rem] border border-panel-border bg-white/78 px-3 py-3"
                   >
                     <input
                       type="checkbox"
@@ -1061,12 +1117,25 @@ export function EditorDashboard() {
                       onChange={() => {
                         toggleMergeAsset(asset.id);
                       }}
-                      className="mt-1 h-4 w-4"
+                      className="h-4 w-4 shrink-0"
                     />
-                    <div>
-                      <p className="text-sm font-semibold">{asset.originalName}</p>
-                      <p className="mt-1 text-sm text-muted">
-                        {formatDuration(asset.metadata?.durationSeconds)} · {formatBytes(asset.sizeBytes)}
+                    <AssetThumbnail asset={asset} compact />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-foreground">
+                          {asset.originalName}
+                        </p>
+                        {checked ? (
+                          <span className="rounded-full bg-[#111111] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
+                            Selected
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 truncate text-[11px] uppercase tracking-[0.14em] text-muted">
+                        {asset.metadata?.formatName ?? asset.mimeType}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-muted">
+                        {formatAssetSummary(asset)}
                       </p>
                     </div>
                   </label>
@@ -1212,7 +1281,7 @@ export function EditorDashboard() {
                       {getJobTypeLabel(job.type)}
                     </p>
                     <p className="mt-1 text-sm text-muted">
-                      {job.id} · {new Date(job.createdAt).toLocaleString()}
+                      {job.id} | {new Date(job.createdAt).toLocaleString()}
                     </p>
                   </div>
                   <div className="rounded-full bg-[#f8f5ef] px-4 py-2 text-sm font-semibold text-foreground">

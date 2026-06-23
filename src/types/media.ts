@@ -18,9 +18,11 @@ export type MediaAsset = {
   storageDriver?: "local" | "r2";
   originalName: string;
   mimeType: string;
+  thumbnailMimeType?: string | null;
   sizeBytes: number;
   createdAt: string;
   downloadUrl: string;
+  thumbnailUrl?: string | null;
   metadata: MediaMetadata | null;
 };
 
