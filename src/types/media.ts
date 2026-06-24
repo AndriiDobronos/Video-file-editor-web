@@ -32,6 +32,9 @@ export type NormalizeTargetPreset =
   | "match-smallest"
   | "match-average";
 
+export type TransitionMergeType = "crossfade" | "fade-black";
+export type TransitionMergeAudioMode = "crossfade" | "hard-cut";
+
 export type NormalizeTargetProfile = {
   preset: NormalizeTargetPreset;
   width: number;
@@ -105,6 +108,12 @@ export type PlaybackSpeedTarget = {
   rate: number;
 };
 
+export type TransitionMergeTarget = {
+  transition: TransitionMergeType;
+  overlapSeconds: number;
+  audioMode: TransitionMergeAudioMode;
+};
+
 export type AudioVolumeTarget = {
   gainDb?: number;
   mute?: boolean;
@@ -138,6 +147,7 @@ export type ProcessingJob = {
   type:
     | "trim"
     | "merge"
+    | "transition-merge"
     | "normalize"
     | "compress-video"
     | "extract-frame"
@@ -163,6 +173,7 @@ export type ProcessingJob = {
     sourceAssetIds?: string[];
     target?:
       | NormalizeTargetProfile
+      | TransitionMergeTarget
       | VideoCompressionTarget
       | ExtractFrameTarget
       | AudioExtractTarget

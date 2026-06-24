@@ -28,6 +28,9 @@ import type {
   NormalizeTargetProfile,
   PlaybackSpeedTarget,
   ProcessingJob,
+  TransitionMergeAudioMode,
+  TransitionMergeTarget,
+  TransitionMergeType,
   TextOverlayHorizontal,
   TextOverlayTarget,
   TextOverlayVertical,
@@ -240,6 +243,41 @@ const audioVolumeQuickOptions = [
   { label: "+3 dB", value: 3 },
   { label: "+6 dB", value: 6 },
 ] as const;
+const transitionOverlapPresets = [0.3, 0.5, 1, 1.5, 2] as const;
+
+const transitionTypeOptions: Array<{
+  value: TransitionMergeType;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "crossfade",
+    label: "Crossfade",
+    description: "Blend the outgoing clip directly into the incoming clip.",
+  },
+  {
+    value: "fade-black",
+    label: "Fade through black",
+    description: "Dip through black during the handoff for a more cinematic break.",
+  },
+];
+
+const transitionAudioModeOptions: Array<{
+  value: TransitionMergeAudioMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "crossfade",
+    label: "Crossfade audio",
+    description: "Fade the outgoing soundtrack into the incoming one across the overlap.",
+  },
+  {
+    value: "hard-cut",
+    label: "Hard cut audio",
+    description: "Switch the soundtrack at the transition point without fading the audio.",
+  },
+];
 
 const cropPadModeOptions: Array<{
   value: CropPadMode;
@@ -375,6 +413,11 @@ const sessionStorageKeys = {
   textOverlayBackgroundOpacity: "vfe:text-overlay-background-opacity",
   textOverlayHorizontal: "vfe:text-overlay-horizontal",
   textOverlayVertical: "vfe:text-overlay-vertical",
+  transitionMergePrimaryAssetId: "vfe:transition-merge-primary-asset-id",
+  transitionMergeSecondaryAssetId: "vfe:transition-merge-secondary-asset-id",
+  transitionMergeType: "vfe:transition-merge-type",
+  transitionMergeOverlap: "vfe:transition-merge-overlap",
+  transitionMergeAudioMode: "vfe:transition-merge-audio-mode",
   mergeAssetIds: "vfe:merge-asset-ids",
   normalizePreset: "vfe:normalize-preset",
   cropPadAssetId: "vfe:crop-pad-asset-id",
@@ -563,6 +606,42 @@ function getMergeCompatibilityIssues(selectedAssets: MediaAsset[]) {
   });
 }
 
+function getTransitionCompatibilityIssues(selectedAssets: MediaAsset[]) {
+  if (selectedAssets.length < 2) {
+    return [];
+  }
+
+  const transitionLabels = new Set([
+    "resolution",
+    "frame rate",
+    "audio sample rate",
+    "audio channels",
+  ]);
+
+  return mergeCompatibilityChecks
+    .filter((check) => transitionLabels.has(check.label))
+    .flatMap((check) => {
+      const values = new Map<string, string[]>();
+
+      for (const asset of selectedAssets) {
+        const value = check.readValue(asset);
+        const assetLabels = values.get(value) ?? [];
+        assetLabels.push(asset.originalName);
+        values.set(value, assetLabels);
+      }
+
+      if (values.size <= 1) {
+        return [];
+      }
+
+      return [
+        `${check.label}: ${Array.from(values.entries())
+          .map(([value, assets]) => `${value} (${assets.join(", ")})`)
+          .join("; ")}`,
+      ];
+    });
+}
+
 function ensureEven(value: number) {
   const rounded = Math.max(2, Math.round(value));
   return rounded % 2 === 0 ? rounded : rounded + 1;
@@ -573,6 +652,11 @@ function getDefaultMergeSelection(nextAssets: MediaAsset[]) {
   const sourceAssets = uploadAssets.length > 0 ? uploadAssets : nextAssets;
 
   return sourceAssets.map((asset) => asset.id);
+}
+
+function getDefaultSecondaryVideoId(videoAssets: MediaAsset[], primaryAssetId: string) {
+  const secondaryAsset = videoAssets.find((asset) => asset.id !== primaryAssetId);
+  return secondaryAsset?.id ?? videoAssets[1]?.id ?? videoAssets[0]?.id ?? "";
 }
 
 function mergeUniqueAssets(...groups: MediaAsset[][]) {
@@ -1138,6 +1222,114 @@ function formatExtractAudioTargetSummary(target: AudioExtractTarget | null) {
   );
 
   return `${selectedFormat?.label ?? target.format.toUpperCase()} audio export`;
+}
+
+function buildTransitionMergeTargetPlan(input: {
+  primaryAsset: MediaAsset | null;
+  secondaryAsset: MediaAsset | null;
+  transition: TransitionMergeType;
+  overlapSeconds: string;
+  audioMode: TransitionMergeAudioMode;
+}) {
+  if (!input.primaryAsset || !input.secondaryAsset) {
+    return {
+      target: null,
+      errorMessage: "Choose two video clips before queueing a transition merge.",
+    };
+  }
+
+  if (input.primaryAsset.id === input.secondaryAsset.id) {
+    return {
+      target: null,
+      errorMessage: "Choose two different clips for the transition.",
+    };
+  }
+
+  if (!isVideoAsset(input.primaryAsset) || !isVideoAsset(input.secondaryAsset)) {
+    return {
+      target: null,
+      errorMessage: "Transition merge currently works with video clips only.",
+    };
+  }
+
+  const primaryDuration = input.primaryAsset.metadata?.durationSeconds;
+  const secondaryDuration = input.secondaryAsset.metadata?.durationSeconds;
+
+  if (
+    primaryDuration === null ||
+    primaryDuration === undefined ||
+    secondaryDuration === null ||
+    secondaryDuration === undefined
+  ) {
+    return {
+      target: null,
+      errorMessage:
+        "Both clips need duration metadata before transition merge. Re-upload any missing file metadata.",
+    };
+  }
+
+  if (!input.overlapSeconds.trim()) {
+    return {
+      target: null,
+      errorMessage: "Overlap duration is required.",
+    };
+  }
+
+  const parsedOverlap = Number(input.overlapSeconds);
+
+  if (!Number.isFinite(parsedOverlap) || parsedOverlap <= 0) {
+    return {
+      target: null,
+      errorMessage: "Overlap duration must be greater than zero.",
+    };
+  }
+
+  const shortestDuration = Math.min(primaryDuration, secondaryDuration);
+
+  if (parsedOverlap >= shortestDuration) {
+    return {
+      target: null,
+      errorMessage: "Overlap must stay shorter than the shortest selected clip.",
+    };
+  }
+
+  return {
+    target: {
+      transition: input.transition,
+      overlapSeconds: parsedOverlap,
+      audioMode: input.audioMode,
+    } satisfies TransitionMergeTarget,
+    errorMessage: null,
+  };
+}
+
+function formatTransitionMergeTargetSummary(
+  target: TransitionMergeTarget | null,
+  primaryAsset: MediaAsset | null,
+  secondaryAsset: MediaAsset | null,
+) {
+  if (!target) {
+    return "Target is unavailable.";
+  }
+
+  const transitionLabel =
+    transitionTypeOptions.find((option) => option.value === target.transition)?.label ??
+    target.transition;
+  const audioModeLabel =
+    transitionAudioModeOptions.find((option) => option.value === target.audioMode)?.label ??
+    target.audioMode;
+
+  return [
+    primaryAsset && secondaryAsset
+      ? `${primaryAsset.originalName} -> ${secondaryAsset.originalName}`
+      : null,
+    `${target.overlapSeconds.toFixed(2)}s overlap`,
+    transitionLabel,
+    audioModeLabel,
+    "MP4 / H.264 / AAC",
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" | ");
 }
 
 function buildAudioTrackEditTargetPlan(input: {
@@ -1746,6 +1938,8 @@ function getJobTypeLabel(type: ProcessingJob["type"]) {
       return "Text overlay job";
     case "merge":
       return "Merge job";
+    case "transition-merge":
+      return "Transition merge job";
     case "normalize":
       return "Normalize job";
     case "crop-pad":
@@ -1775,6 +1969,7 @@ function getAssetLibraryScope(
     activeView === "compress" ||
     activeView === "extract-frame" ||
     activeView === "text-overlay" ||
+    activeView === "transition-merge" ||
     activeView === "merge" ||
     activeView === "normalize"
   ) {
@@ -2040,6 +2235,14 @@ export function EditorDashboard({
     useState<TextOverlayHorizontal>("center");
   const [textOverlayVertical, setTextOverlayVertical] =
     useState<TextOverlayVertical>("bottom");
+  const [transitionMergePrimaryAssetId, setTransitionMergePrimaryAssetId] = useState("");
+  const [transitionMergeSecondaryAssetId, setTransitionMergeSecondaryAssetId] = useState("");
+  const [transitionMergeType, setTransitionMergeType] =
+    useState<TransitionMergeType>("crossfade");
+  const [transitionMergeOverlapSeconds, setTransitionMergeOverlapSeconds] = useState("1");
+  const [transitionMergeAudioMode, setTransitionMergeAudioMode] =
+    useState<TransitionMergeAudioMode>("crossfade");
+  const [isTransitionHelpOpen, setIsTransitionHelpOpen] = useState(false);
   const [mergeAssetIds, setMergeAssetIds] = useState<string[]>([]);
   const [normalizePreset, setNormalizePreset] =
     useState<NormalizeTargetPreset>("hd-720p");
@@ -2154,6 +2357,27 @@ export function EditorDashboard({
       textOverlayBackgroundColor,
       Number(textOverlayBackgroundOpacity || "72"),
     ) ?? "rgba(17, 17, 17, 0.72)";
+  const selectedTransitionPrimaryAsset =
+    videoAssets.find((asset) => asset.id === transitionMergePrimaryAssetId) ?? null;
+  const selectedTransitionSecondaryAsset =
+    videoAssets.find((asset) => asset.id === transitionMergeSecondaryAssetId) ?? null;
+  const transitionMergeTargetPlan = buildTransitionMergeTargetPlan({
+    primaryAsset: selectedTransitionPrimaryAsset,
+    secondaryAsset: selectedTransitionSecondaryAsset,
+    transition: transitionMergeType,
+    overlapSeconds: transitionMergeOverlapSeconds,
+    audioMode: transitionMergeAudioMode,
+  });
+  const selectedTransitionAssets = videoAssets.filter(
+    (asset) =>
+      asset.id === transitionMergePrimaryAssetId ||
+      asset.id === transitionMergeSecondaryAssetId,
+  );
+  const transitionCompatibilityIssues = getTransitionCompatibilityIssues(
+    selectedTransitionAssets,
+  );
+  const transitionRequiresNormalization =
+    selectedTransitionAssets.length === 2 && transitionCompatibilityIssues.length > 0;
   const selectedMergeAssets = videoAssets.filter((asset) =>
     mergeAssetIds.includes(asset.id),
   );
@@ -2226,6 +2450,8 @@ export function EditorDashboard({
         setAudioVolumeStartTime("");
         setAudioVolumeEndTime("");
         setTextOverlayAssetId("");
+        setTransitionMergePrimaryAssetId("");
+        setTransitionMergeSecondaryAssetId("");
         setMergeAssetIds([]);
         setCropPadAssetId("");
         setCropPadWidth("");
@@ -2318,6 +2544,28 @@ export function EditorDashboard({
 
       if (!hasSelectedTextOverlayAsset) {
         setTextOverlayAssetId(nextVideoAssets[0]?.id ?? "");
+      }
+
+      const hasSelectedTransitionPrimaryAsset = nextVideoAssets.some(
+        (asset) => asset.id === transitionMergePrimaryAssetId,
+      );
+
+      if (!hasSelectedTransitionPrimaryAsset) {
+        const nextPrimaryAssetId = nextVideoAssets[0]?.id ?? "";
+        setTransitionMergePrimaryAssetId(nextPrimaryAssetId);
+        setTransitionMergeSecondaryAssetId(
+          getDefaultSecondaryVideoId(nextVideoAssets, nextPrimaryAssetId),
+        );
+      } else {
+        const hasSelectedTransitionSecondaryAsset = nextVideoAssets.some(
+          (asset) => asset.id === transitionMergeSecondaryAssetId,
+        );
+
+        if (!hasSelectedTransitionSecondaryAsset) {
+          setTransitionMergeSecondaryAssetId(
+            getDefaultSecondaryVideoId(nextVideoAssets, transitionMergePrimaryAssetId),
+          );
+        }
       }
 
       setMergeAssetIds((current) => {
@@ -2528,6 +2776,27 @@ export function EditorDashboard({
         "bottom",
       ) as TextOverlayVertical,
     );
+    setTransitionMergePrimaryAssetId(
+      readSessionString(sessionStorageKeys.transitionMergePrimaryAssetId, ""),
+    );
+    setTransitionMergeSecondaryAssetId(
+      readSessionString(sessionStorageKeys.transitionMergeSecondaryAssetId, ""),
+    );
+    setTransitionMergeType(
+      readSessionString(
+        sessionStorageKeys.transitionMergeType,
+        "crossfade",
+      ) as TransitionMergeType,
+    );
+    setTransitionMergeOverlapSeconds(
+      readSessionString(sessionStorageKeys.transitionMergeOverlap, "1"),
+    );
+    setTransitionMergeAudioMode(
+      readSessionString(
+        sessionStorageKeys.transitionMergeAudioMode,
+        "crossfade",
+      ) as TransitionMergeAudioMode,
+    );
     setMergeAssetIds(readSessionStringArray(sessionStorageKeys.mergeAssetIds));
     setNormalizePreset(
       readSessionString(
@@ -2657,6 +2926,12 @@ export function EditorDashboard({
       setIsMergeHelpOpen(false);
     }
   }, [mergeRequiresNormalization]);
+
+  useEffect(() => {
+    if (!transitionRequiresNormalization) {
+      setIsTransitionHelpOpen(false);
+    }
+  }, [transitionRequiresNormalization]);
 
   useEffect(() => {
     if (!hasRestoredSession || audioTrackMode !== "replace") {
@@ -3092,6 +3367,61 @@ export function EditorDashboard({
       textOverlayVertical,
     );
   }, [hasRestoredSession, textOverlayVertical]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.transitionMergePrimaryAssetId,
+      transitionMergePrimaryAssetId,
+    );
+  }, [hasRestoredSession, transitionMergePrimaryAssetId]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.transitionMergeSecondaryAssetId,
+      transitionMergeSecondaryAssetId,
+    );
+  }, [hasRestoredSession, transitionMergeSecondaryAssetId]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.transitionMergeType,
+      transitionMergeType,
+    );
+  }, [hasRestoredSession, transitionMergeType]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.transitionMergeOverlap,
+      transitionMergeOverlapSeconds,
+    );
+  }, [hasRestoredSession, transitionMergeOverlapSeconds]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.transitionMergeAudioMode,
+      transitionMergeAudioMode,
+    );
+  }, [hasRestoredSession, transitionMergeAudioMode]);
 
   useEffect(() => {
     if (!hasRestoredSession) {
@@ -3574,6 +3904,57 @@ export function EditorDashboard({
       setFeedback(`Text overlay job ${response.item.id.slice(0, 8)} has been queued.`);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Text overlay job failed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleTransitionMergeJob() {
+    if (!transitionMergePrimaryAssetId || !transitionMergeSecondaryAssetId) {
+      setErrorMessage("Choose two video clips before queueing a transition merge.");
+      return;
+    }
+
+    if (transitionRequiresNormalization) {
+      setErrorMessage(
+        "These clips still need normalization before transition merge. Open the Normalize page and align them first.",
+      );
+      return;
+    }
+
+    if (!transitionMergeTargetPlan.target) {
+      setErrorMessage(
+        transitionMergeTargetPlan.errorMessage ??
+          "Transition merge target could not be prepared.",
+      );
+      return;
+    }
+
+    setBusyAction("transition-merge");
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Preparing your overlap transition request.");
+      const response = await fetchJson<JobResponse>("/api/v1/jobs/transition-merge", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sourceAssetIds: [
+            transitionMergePrimaryAssetId,
+            transitionMergeSecondaryAssetId,
+          ],
+          target: transitionMergeTargetPlan.target,
+        }),
+      });
+
+      await loadJobs();
+      setFeedback(`Transition merge job ${response.item.id.slice(0, 8)} has been queued.`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Transition merge job failed.",
+      );
     } finally {
       setBusyAction(null);
     }
@@ -5201,6 +5582,322 @@ export function EditorDashboard({
     );
   }
 
+  function renderTransitionMergePanel() {
+    const selectedTransitionType = transitionTypeOptions.find(
+      (option) => option.value === transitionMergeType,
+    );
+    const selectedTransitionAudioMode = transitionAudioModeOptions.find(
+      (option) => option.value === transitionMergeAudioMode,
+    );
+
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Transition merge function"
+          title="Overlap two clips and blend the cut"
+          badge="Function"
+        />
+
+        <div className="mt-6 space-y-4">
+          {videoAssets.length > 1 ? (
+            <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]">
+              <label className="grid gap-2 text-sm font-medium text-foreground">
+                Clip A
+                <select
+                  value={transitionMergePrimaryAssetId}
+                  onChange={(event) => {
+                    const nextPrimaryAssetId = event.target.value;
+                    setTransitionMergePrimaryAssetId(nextPrimaryAssetId);
+
+                    if (nextPrimaryAssetId === transitionMergeSecondaryAssetId) {
+                      setTransitionMergeSecondaryAssetId(
+                        getDefaultSecondaryVideoId(videoAssets, nextPrimaryAssetId),
+                      );
+                    }
+                  }}
+                  className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+                >
+                  {videoAssets.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.originalName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="flex items-end justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTransitionMergePrimaryAssetId(transitionMergeSecondaryAssetId);
+                    setTransitionMergeSecondaryAssetId(transitionMergePrimaryAssetId);
+                  }}
+                  className="rounded-full border border-panel-border bg-white px-4 py-3 text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef]"
+                >
+                  Swap order
+                </button>
+              </div>
+
+              <label className="grid gap-2 text-sm font-medium text-foreground">
+                Clip B
+                <select
+                  value={transitionMergeSecondaryAssetId}
+                  onChange={(event) => {
+                    const nextSecondaryAssetId = event.target.value;
+                    setTransitionMergeSecondaryAssetId(nextSecondaryAssetId);
+
+                    if (nextSecondaryAssetId === transitionMergePrimaryAssetId) {
+                      setTransitionMergePrimaryAssetId(
+                        getDefaultSecondaryVideoId(videoAssets, nextSecondaryAssetId),
+                      );
+                    }
+                  }}
+                  className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+                >
+                  {videoAssets.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.originalName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : (
+            <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+              Upload at least two video clips to enable transition merge.
+            </div>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-[1.4rem] border border-panel-border bg-white/78 p-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Clip A</p>
+              {selectedTransitionPrimaryAsset ? (
+                <div className="mt-3 flex items-center gap-3">
+                  <AssetThumbnail asset={selectedTransitionPrimaryAsset} compact />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-foreground">
+                      {selectedTransitionPrimaryAsset.originalName}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-muted">
+                      {formatAssetSummary(selectedTransitionPrimaryAsset)}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-muted">Choose the outgoing clip.</p>
+              )}
+            </div>
+
+            <div className="rounded-[1.4rem] border border-panel-border bg-white/78 p-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Clip B</p>
+              {selectedTransitionSecondaryAsset ? (
+                <div className="mt-3 flex items-center gap-3">
+                  <AssetThumbnail asset={selectedTransitionSecondaryAsset} compact />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-foreground">
+                      {selectedTransitionSecondaryAsset.originalName}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-muted">
+                      {formatAssetSummary(selectedTransitionSecondaryAsset)}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-muted">Choose the incoming clip.</p>
+              )}
+            </div>
+          </div>
+
+          {transitionRequiresNormalization ? (
+            <div className="rounded-[1.5rem] bg-[#fff1ea] px-4 py-4 text-[#8f3b13]">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold">
+                  Transition merge works best after the selected clips share one format.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsTransitionHelpOpen((current) => !current);
+                  }}
+                  aria-expanded={isTransitionHelpOpen}
+                  aria-label="Toggle transition merge details"
+                  className="flex h-8 w-8 items-center justify-center rounded-full border border-[#e8b39a] bg-white text-sm font-semibold text-[#8f3b13] transition hover:bg-[#fff8f4]"
+                >
+                  i
+                </button>
+              </div>
+
+              {isTransitionHelpOpen ? (
+                <div className="mt-3 text-sm leading-6">
+                  <p>
+                    Normalize the clips first so resolution, frame rate, and audio timing stay aligned during the overlap.
+                  </p>
+                  {transitionCompatibilityIssues.map((issue) => (
+                    <p key={issue} className="mt-2">
+                      {issue}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="mt-4">
+                <Link
+                  href="/functions/normalize"
+                  className="rounded-full border border-[#e8b39a] bg-white px-4 py-2 text-sm font-semibold text-[#8f3b13]"
+                >
+                  Open normalize page
+                </Link>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Visual transition
+              <select
+                value={transitionMergeType}
+                onChange={(event) => {
+                  setTransitionMergeType(event.target.value as TransitionMergeType);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {transitionTypeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="rounded-[1.5rem] bg-white/78 px-4 py-4">
+              <p className="text-sm font-semibold text-foreground">
+                {selectedTransitionType?.label ?? "Transition"}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-muted">
+                {selectedTransitionType?.description ??
+                  "Choose how one clip should hand off to the next."}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Audio transition
+              <select
+                value={transitionMergeAudioMode}
+                onChange={(event) => {
+                  setTransitionMergeAudioMode(
+                    event.target.value as TransitionMergeAudioMode,
+                  );
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {transitionAudioModeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="rounded-[1.5rem] bg-white/78 px-4 py-4">
+              <p className="text-sm font-semibold text-foreground">
+                {selectedTransitionAudioMode?.label ?? "Audio transition"}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-muted">
+                {selectedTransitionAudioMode?.description ??
+                  "Choose whether audio should fade together or switch abruptly."}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-[1.5rem] bg-white/78 p-4">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Overlap duration (seconds)
+              <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                value={transitionMergeOverlapSeconds}
+                onChange={(event) => {
+                  setTransitionMergeOverlapSeconds(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {transitionOverlapPresets.map((value) => {
+                const isActive = Number(transitionMergeOverlapSeconds) === value;
+
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => {
+                      setTransitionMergeOverlapSeconds(String(value));
+                    }}
+                    className={
+                      isActive
+                        ? "rounded-full bg-[#111111] px-3.5 py-2 text-sm font-semibold text-white"
+                        : "rounded-full border border-panel-border bg-white px-3.5 py-2 text-sm font-semibold text-foreground"
+                    }
+                  >
+                    {value}s
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Output summary</p>
+              <p className="mt-2 text-sm font-semibold">
+                {formatTransitionMergeTargetSummary(
+                  transitionMergeTargetPlan.target,
+                  selectedTransitionPrimaryAsset,
+                  selectedTransitionSecondaryAsset,
+                )}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Tip</p>
+              <p className="mt-2 text-sm font-semibold">
+                Use Audio Volume first if one clip sounds noticeably louder than the other.
+              </p>
+            </div>
+          </div>
+
+          {transitionMergeTargetPlan.errorMessage ? (
+            <p className="rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
+              {transitionMergeTargetPlan.errorMessage}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              void handleTransitionMergeJob();
+            }}
+            disabled={
+              busyAction === "transition-merge" ||
+              !transitionMergePrimaryAssetId ||
+              !transitionMergeSecondaryAssetId ||
+              transitionRequiresNormalization ||
+              !transitionMergeTargetPlan.target
+            }
+            className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busyAction === "transition-merge"
+              ? "Queueing transition merge..."
+              : "Queue transition merge job"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
   function renderMergePanel() {
     return (
       <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
@@ -5861,6 +6558,10 @@ export function EditorDashboard({
 
     if (activeView === "text-overlay") {
       return renderTextOverlayPanel();
+    }
+
+    if (activeView === "transition-merge") {
+      return renderTransitionMergePanel();
     }
 
     if (activeView === "merge") {

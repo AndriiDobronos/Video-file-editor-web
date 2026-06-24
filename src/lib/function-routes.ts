@@ -8,6 +8,7 @@ export type EditorView =
   | "change-speed"
   | "audio-volume"
   | "text-overlay"
+  | "transition-merge"
   | "merge"
   | "normalize"
   | "crop-pad"
@@ -78,6 +79,13 @@ export const functionRouteOptions: Array<{
     label: "Add text overlay",
     shortLabel: "Text",
     description: "Burn one title, caption, or short note directly into a video export.",
+  },
+  {
+    view: "transition-merge",
+    href: "/functions/transition-merge",
+    label: "Transition merge",
+    shortLabel: "Transition",
+    description: "Overlap two prepared clips and blend them together with a simple visual transition.",
   },
   {
     view: "merge",
@@ -170,6 +178,12 @@ export const editorViewMeta: Record<
     eyebrow: "Function",
     description:
       "Add a burned-in title, caption, or note directly on top of one video export.",
+  },
+  "transition-merge": {
+    label: "Transition merge",
+    eyebrow: "Function",
+    description:
+      "Overlap two prepared clips, blend the cut with a visual transition, and choose how the audio should behave in the handoff.",
   },
   merge: {
     label: "Merge",
