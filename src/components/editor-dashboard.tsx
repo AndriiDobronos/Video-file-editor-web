@@ -9,7 +9,11 @@ import {
   type EditorView,
 } from "@/lib/function-routes";
 import type {
+  AudioExtractFormat,
+  AudioTrackEditMode,
+  AudioTrackEditTarget,
   ExtractFrameTarget,
+  AudioExtractTarget,
   ConvertImageFit,
   ConvertImageFormat,
   ConvertImageTarget,
@@ -21,7 +25,11 @@ import type {
   MediaAsset,
   NormalizeTargetPreset,
   NormalizeTargetProfile,
+  PlaybackSpeedTarget,
   ProcessingJob,
+  TextOverlayHorizontal,
+  TextOverlayTarget,
+  TextOverlayVertical,
   VideoCompressionEncoderPreset,
   VideoCompressionMode,
   VideoCompressionPreset,
@@ -47,7 +55,7 @@ type JobResponse = {
 const statusHighlights = [
   "Shared uploads stay available on every function page",
   "Each tool now opens on its own route instead of one long scroll",
-  "Compress, extract, crop, trim, convert, and merge all reuse the same shared asset library",
+  "Compress, extract, add text, crop, trim, convert, and merge all reuse the same shared asset library",
 ];
 
 const normalizeTargetPresetOptions: Array<{
@@ -182,6 +190,47 @@ const convertFitOptions: Array<{
   },
 ];
 
+const audioExtractFormatOptions: Array<{
+  value: AudioExtractFormat;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "mp3",
+    label: "MP3",
+    description: "A lightweight choice for voice tracks, music drafts, and general sharing.",
+  },
+  {
+    value: "m4a",
+    label: "M4A",
+    description: "A clean AAC export that stays practical for modern apps and browsers.",
+  },
+  {
+    value: "wav",
+    label: "WAV",
+    description: "A larger uncompressed output when you want easier handoff to audio tools.",
+  },
+];
+
+const audioTrackModeOptions: Array<{
+  value: AudioTrackEditMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "mute",
+    label: "Mute audio",
+    description: "Keep the picture and export the video without any soundtrack.",
+  },
+  {
+    value: "replace",
+    label: "Replace audio",
+    description: "Swap the current soundtrack for another uploaded audio source.",
+  },
+];
+
+const speedPresetOptions = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+
 const cropPadModeOptions: Array<{
   value: CropPadMode;
   label: string;
@@ -210,6 +259,24 @@ const cropPadHorizontalAnchorOptions: Array<{
 
 const cropPadVerticalAnchorOptions: Array<{
   value: CropPadAnchorY;
+  label: string;
+}> = [
+  { value: "top", label: "Top" },
+  { value: "center", label: "Center" },
+  { value: "bottom", label: "Bottom" },
+];
+
+const textOverlayHorizontalOptions: Array<{
+  value: TextOverlayHorizontal;
+  label: string;
+}> = [
+  { value: "left", label: "Left" },
+  { value: "center", label: "Center" },
+  { value: "right", label: "Right" },
+];
+
+const textOverlayVerticalOptions: Array<{
+  value: TextOverlayVertical;
   label: string;
 }> = [
   { value: "top", label: "Top" },
@@ -273,6 +340,24 @@ const sessionStorageKeys = {
   extractHeight: "vfe:extract-height",
   extractFit: "vfe:extract-fit",
   extractBackground: "vfe:extract-background",
+  extractAudioAssetId: "vfe:extract-audio-asset-id",
+  extractAudioFormat: "vfe:extract-audio-format",
+  audioTrackAssetId: "vfe:audio-track-asset-id",
+  audioTrackMode: "vfe:audio-track-mode",
+  audioTrackReplacementAssetId: "vfe:audio-track-replacement-asset-id",
+  audioTrackLoopReplacement: "vfe:audio-track-loop-replacement",
+  changeSpeedAssetId: "vfe:change-speed-asset-id",
+  changeSpeedRate: "vfe:change-speed-rate",
+  textOverlayAssetId: "vfe:text-overlay-asset-id",
+  textOverlayText: "vfe:text-overlay-text",
+  textOverlayStartTime: "vfe:text-overlay-start-time",
+  textOverlayEndTime: "vfe:text-overlay-end-time",
+  textOverlayFontSize: "vfe:text-overlay-font-size",
+  textOverlayFontColor: "vfe:text-overlay-font-color",
+  textOverlayBackgroundColor: "vfe:text-overlay-background-color",
+  textOverlayBackgroundOpacity: "vfe:text-overlay-background-opacity",
+  textOverlayHorizontal: "vfe:text-overlay-horizontal",
+  textOverlayVertical: "vfe:text-overlay-vertical",
   mergeAssetIds: "vfe:merge-asset-ids",
   normalizePreset: "vfe:normalize-preset",
   cropPadAssetId: "vfe:crop-pad-asset-id",
@@ -404,6 +489,18 @@ function isVideoAsset(asset: MediaAsset) {
   );
 }
 
+function hasAudioStream(asset: MediaAsset) {
+  return Boolean(asset.metadata?.audioCodec) || asset.mimeType.toLowerCase().startsWith("audio/");
+}
+
+function isAudioOnlyAsset(asset: MediaAsset) {
+  return hasAudioStream(asset) && !isVideoAsset(asset);
+}
+
+function isTimedMediaAsset(asset: MediaAsset) {
+  return isVideoAsset(asset) || isAudioOnlyAsset(asset);
+}
+
 function isCropPadEligibleAsset(asset: MediaAsset) {
   return isVideoAsset(asset) || isImageAsset(asset);
 }
@@ -459,6 +556,26 @@ function getDefaultMergeSelection(nextAssets: MediaAsset[]) {
   const sourceAssets = uploadAssets.length > 0 ? uploadAssets : nextAssets;
 
   return sourceAssets.map((asset) => asset.id);
+}
+
+function mergeUniqueAssets(...groups: MediaAsset[][]) {
+  const deduped = new Map<string, MediaAsset>();
+
+  for (const group of groups) {
+    for (const asset of group) {
+      deduped.set(asset.id, asset);
+    }
+  }
+
+  return Array.from(deduped.values());
+}
+
+function getDefaultReplacementAudioId(
+  audioAssets: MediaAsset[],
+  selectedVideoAssetId: string,
+) {
+  const preferredReplacement = audioAssets.find((asset) => asset.id !== selectedVideoAssetId);
+  return preferredReplacement?.id ?? audioAssets[0]?.id ?? "";
 }
 
 function buildNormalizeTargetPlan(
@@ -607,6 +724,82 @@ function parseRequiredNonNegativeNumber(value: string, label: string) {
   }
 
   return { value: parsed, error: null };
+}
+
+function parseOptionalNonNegativeNumber(value: string, label: string) {
+  if (!value.trim()) {
+    return {
+      value: undefined,
+      error: null,
+    };
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return {
+      value: undefined,
+      error: `${label} must be zero or greater.`,
+    };
+  }
+
+  return { value: parsed, error: null };
+}
+
+function parseOptionalPercentage(value: string, label: string) {
+  if (!value.trim()) {
+    return {
+      value: undefined,
+      error: null,
+    };
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+    return {
+      value: undefined,
+      error: `${label} must be between 0 and 100.`,
+    };
+  }
+
+  return { value: parsed, error: null };
+}
+
+function hexToRgbChannels(color: string) {
+  const hexMatch = color.trim().match(/^#([0-9a-fA-F]{6})$/);
+
+  if (!hexMatch) {
+    return null;
+  }
+
+  return {
+    red: Number.parseInt(hexMatch[1].slice(0, 2), 16),
+    green: Number.parseInt(hexMatch[1].slice(2, 4), 16),
+    blue: Number.parseInt(hexMatch[1].slice(4, 6), 16),
+  };
+}
+
+function formatOverlayAlpha(alpha: number) {
+  const clampedAlpha = Number.isFinite(alpha) ? Math.max(0, Math.min(1, alpha)) : 0.72;
+
+  return clampedAlpha
+    .toFixed(2)
+    .replace(/\.?0+$/, "");
+}
+
+function buildRgbaColorString(color: string, opacityPercent: number) {
+  const rgb = hexToRgbChannels(color);
+
+  if (!rgb) {
+    return null;
+  }
+
+  const resolvedOpacityPercent = Number.isFinite(opacityPercent) ? opacityPercent : 72;
+
+  return `rgba(${rgb.red}, ${rgb.green}, ${rgb.blue}, ${formatOverlayAlpha(
+    resolvedOpacityPercent / 100,
+  )})`;
 }
 
 function buildCompressionTargetPlan(input: {
@@ -885,6 +1078,354 @@ function formatExtractFrameTargetSummary(target: ExtractFrameTarget | null) {
   return details.join(" | ");
 }
 
+function buildExtractAudioTargetPlan(input: {
+  asset: MediaAsset | null;
+  format: AudioExtractFormat;
+}) {
+  if (!input.asset) {
+    return {
+      target: null,
+      errorMessage: "Choose one video clip before extracting audio.",
+    };
+  }
+
+  if (!isVideoAsset(input.asset)) {
+    return {
+      target: null,
+      errorMessage: "Audio extraction currently works with video clips only.",
+    };
+  }
+
+  if (!hasAudioStream(input.asset)) {
+    return {
+      target: null,
+      errorMessage: "The selected video does not contain an audio track to extract.",
+    };
+  }
+
+  return {
+    target: {
+      format: input.format,
+    } satisfies AudioExtractTarget,
+    errorMessage: null,
+  };
+}
+
+function formatExtractAudioTargetSummary(target: AudioExtractTarget | null) {
+  if (!target) {
+    return "Target is unavailable.";
+  }
+
+  const selectedFormat = audioExtractFormatOptions.find(
+    (option) => option.value === target.format,
+  );
+
+  return `${selectedFormat?.label ?? target.format.toUpperCase()} audio export`;
+}
+
+function buildAudioTrackEditTargetPlan(input: {
+  asset: MediaAsset | null;
+  mode: AudioTrackEditMode;
+  replacementAsset: MediaAsset | null;
+  loopReplacement: boolean;
+}) {
+  if (!input.asset) {
+    return {
+      target: null,
+      errorMessage: "Choose one video clip before editing its soundtrack.",
+    };
+  }
+
+  if (!isVideoAsset(input.asset)) {
+    return {
+      target: null,
+      errorMessage: "Mute / replace audio currently works with video clips only.",
+    };
+  }
+
+  if (input.mode === "mute") {
+    return {
+      target: {
+        mode: "mute",
+      } satisfies AudioTrackEditTarget,
+      errorMessage: null,
+    };
+  }
+
+  if (!input.replacementAsset) {
+    return {
+      target: null,
+      errorMessage: "Choose a replacement audio source before queueing the job.",
+    };
+  }
+
+  if (!hasAudioStream(input.replacementAsset)) {
+    return {
+      target: null,
+      errorMessage: "The selected replacement file does not contain an audio track.",
+    };
+  }
+
+  return {
+    target: {
+      mode: "replace",
+      replacementAssetId: input.replacementAsset.id,
+      loopReplacement: input.loopReplacement,
+    } satisfies AudioTrackEditTarget,
+    errorMessage: null,
+  };
+}
+
+function formatAudioTrackEditTargetSummary(
+  target: AudioTrackEditTarget | null,
+  replacementAsset: MediaAsset | null,
+) {
+  if (!target) {
+    return "Target is unavailable.";
+  }
+
+  if (target.mode === "mute") {
+    return "Remove the soundtrack and keep a silent video export.";
+  }
+
+  return [
+    replacementAsset?.originalName ?? "Replacement audio",
+    target.loopReplacement === false ? "Use replacement once" : "Loop replacement to fill clip",
+  ].join(" | ");
+}
+
+function buildPlaybackSpeedTargetPlan(input: {
+  asset: MediaAsset | null;
+  rate: string;
+}) {
+  if (!input.asset) {
+    return {
+      target: null,
+      errorMessage: "Choose one video or audio file before changing speed.",
+    };
+  }
+
+  if (!isTimedMediaAsset(input.asset)) {
+    return {
+      target: null,
+      errorMessage: "Speed change currently supports video files and audio files only.",
+    };
+  }
+
+  if (!input.rate.trim()) {
+    return {
+      target: null,
+      errorMessage: "Playback speed is required.",
+    };
+  }
+
+  const parsed = Number(input.rate);
+
+  if (!Number.isFinite(parsed) || parsed < 0.25 || parsed > 4) {
+    return {
+      target: null,
+      errorMessage: "Playback speed must stay between 0.25x and 4x.",
+    };
+  }
+
+  return {
+    target: {
+      rate: parsed,
+    } satisfies PlaybackSpeedTarget,
+    errorMessage: null,
+  };
+}
+
+function formatPlaybackSpeedTargetSummary(
+  asset: MediaAsset | null,
+  target: PlaybackSpeedTarget | null,
+) {
+  if (!target) {
+    return "Target is unavailable.";
+  }
+
+  const outputHint = asset
+    ? isVideoAsset(asset)
+      ? "MP4 video export"
+      : "MP3 audio export"
+    : "Output unavailable";
+
+  return `${target.rate.toFixed(2)}x | ${outputHint}`;
+}
+
+function buildTextOverlayTargetPlan(input: {
+  asset: MediaAsset | null;
+  text: string;
+  startTime: string;
+  endTime: string;
+  fontSize: string;
+  fontColor: string;
+  backgroundColor: string;
+  backgroundOpacity: string;
+  horizontal: TextOverlayHorizontal;
+  vertical: TextOverlayVertical;
+}) {
+  if (!input.asset) {
+    return {
+      target: null,
+      errorMessage: "Choose one video clip before adding text.",
+    };
+  }
+
+  if (!isVideoAsset(input.asset)) {
+    return {
+      target: null,
+      errorMessage: "Text overlay currently works with video clips only.",
+    };
+  }
+
+  const overlayText = input.text.trim();
+
+  if (!overlayText) {
+    return {
+      target: null,
+      errorMessage: "Enter the text you want to burn into the video.",
+    };
+  }
+
+  const startTimeResult = parseOptionalNonNegativeNumber(
+    input.startTime,
+    "Start time",
+  );
+  const endTimeResult = parseOptionalNonNegativeNumber(input.endTime, "End time");
+  const fontSizeResult = parseOptionalPositiveInteger(input.fontSize, "Font size");
+  const backgroundOpacityResult = parseOptionalPercentage(
+    input.backgroundOpacity,
+    "Box opacity",
+  );
+  const errorMessage =
+    startTimeResult.error ??
+    endTimeResult.error ??
+    fontSizeResult.error ??
+    backgroundOpacityResult.error ??
+    null;
+
+  if (errorMessage) {
+    return {
+      target: null,
+      errorMessage,
+    };
+  }
+
+  if (
+    typeof startTimeResult.value === "number" &&
+    typeof endTimeResult.value === "number" &&
+    endTimeResult.value <= startTimeResult.value
+  ) {
+    return {
+      target: null,
+      errorMessage: "End time must be greater than the start time.",
+    };
+  }
+
+  const duration = input.asset.metadata?.durationSeconds;
+
+  if (
+    typeof duration === "number" &&
+    typeof startTimeResult.value === "number" &&
+    startTimeResult.value > duration
+  ) {
+    return {
+      target: null,
+      errorMessage: "Start time cannot be greater than the source duration.",
+    };
+  }
+
+  if (
+    typeof duration === "number" &&
+    typeof endTimeResult.value === "number" &&
+    endTimeResult.value > duration
+  ) {
+    return {
+      target: null,
+      errorMessage: "End time cannot be greater than the source duration.",
+    };
+  }
+
+  const fontColor = input.fontColor.trim();
+  const backgroundColor = input.backgroundColor.trim();
+
+  if (fontColor && !/^#[0-9a-fA-F]{6}$/.test(fontColor)) {
+    return {
+      target: null,
+      errorMessage: "Font color must use a six-digit hex value such as #ffffff.",
+    };
+  }
+
+  if (backgroundColor && !/^#[0-9a-fA-F]{6}$/.test(backgroundColor)) {
+    return {
+      target: null,
+      errorMessage: "Box color must use a six-digit hex value such as #111111.",
+    };
+  }
+
+  const resolvedBackgroundColor =
+    buildRgbaColorString(
+      backgroundColor || "#111111",
+      backgroundOpacityResult.value ?? 72,
+    ) ?? null;
+
+  if (!resolvedBackgroundColor) {
+    return {
+      target: null,
+      errorMessage: "Box color could not be converted into a valid RGBA value.",
+    };
+  }
+
+  const target: TextOverlayTarget = {
+    text: overlayText,
+    fontSize: fontSizeResult.value ?? 42,
+    fontColor: fontColor || "#ffffff",
+    backgroundColor: resolvedBackgroundColor,
+    horizontal: input.horizontal,
+    vertical: input.vertical,
+  };
+
+  if (typeof startTimeResult.value === "number") {
+    target.startTime = startTimeResult.value;
+  }
+
+  if (typeof endTimeResult.value === "number") {
+    target.endTime = endTimeResult.value;
+  }
+
+  return {
+    target,
+    errorMessage: null,
+  };
+}
+
+function formatTextOverlayTargetSummary(target: TextOverlayTarget | null) {
+  if (!target) {
+    return "Target is unavailable.";
+  }
+
+  const textPreview =
+    target.text.length > 36 ? `${target.text.slice(0, 36).trimEnd()}...` : target.text;
+  const visibility =
+    typeof target.startTime === "number" && typeof target.endTime === "number"
+      ? `${target.startTime.toFixed(2)}s to ${target.endTime.toFixed(2)}s`
+      : typeof target.startTime === "number"
+        ? `From ${target.startTime.toFixed(2)}s`
+        : typeof target.endTime === "number"
+          ? `Until ${target.endTime.toFixed(2)}s`
+          : "Entire clip";
+  const details = [
+    `"${textPreview}"`,
+    visibility,
+    `${target.fontSize ?? 42}px`,
+    `${target.horizontal ?? "center"} / ${target.vertical ?? "bottom"}`,
+    target.backgroundColor ? `Box: ${target.backgroundColor}` : null,
+  ];
+
+  return details.filter((value): value is string => Boolean(value)).join(" | ");
+}
+
 function buildCropPadTargetPlan(input: {
   asset: MediaAsset | null;
   mode: CropPadMode;
@@ -1022,6 +1563,14 @@ function getJobTypeLabel(type: ProcessingJob["type"]) {
       return "Compress video job";
     case "extract-frame":
       return "Extract frame job";
+    case "extract-audio":
+      return "Extract audio job";
+    case "edit-audio-track":
+      return "Audio track job";
+    case "change-speed":
+      return "Change speed job";
+    case "overlay-text":
+      return "Text overlay job";
     case "merge":
       return "Merge job";
     case "normalize":
@@ -1033,6 +1582,87 @@ function getJobTypeLabel(type: ProcessingJob["type"]) {
     default:
       return type;
   }
+}
+
+function getAssetLibraryScope(
+  activeView: EditorView,
+  collections: {
+    assets: MediaAsset[];
+    videoAssets: MediaAsset[];
+    imageAssets: MediaAsset[];
+    cropPadAssets: MediaAsset[];
+    videoWithAudioAssets: MediaAsset[];
+    audioTrackAssets: MediaAsset[];
+    timedMediaAssets: MediaAsset[];
+  },
+) {
+  if (
+    activeView === "trim" ||
+    activeView === "compress" ||
+    activeView === "extract-frame" ||
+    activeView === "text-overlay" ||
+    activeView === "merge" ||
+    activeView === "normalize"
+  ) {
+    return {
+      countLabel: "Visible videos",
+      description: "Only video files are shown on this page because this function works with video sources.",
+      items: collections.videoAssets,
+      emptyMessage: "Upload a video file to populate this page.",
+    };
+  }
+
+  if (activeView === "extract-audio") {
+    return {
+      countLabel: "Videos with audio",
+      description: "Only videos that already contain an audio stream stay visible here because Extract audio needs a soundtrack to pull out.",
+      items: collections.videoWithAudioAssets,
+      emptyMessage: "Upload a video with audio to populate this page.",
+    };
+  }
+
+  if (activeView === "audio-track") {
+    return {
+      countLabel: "Track-ready files",
+      description: "This page keeps video targets and audio-capable replacement files visible together so soundtrack editing stays focused.",
+      items: collections.audioTrackAssets,
+      emptyMessage: "Upload a video and at least one audio-capable file to populate this page.",
+    };
+  }
+
+  if (activeView === "change-speed") {
+    return {
+      countLabel: "Timed media",
+      description: "Only video clips and audio files stay visible here because speed changes apply to time-based media only.",
+      items: collections.timedMediaAssets,
+      emptyMessage: "Upload a video clip or audio file to populate this page.",
+    };
+  }
+
+  if (activeView === "convert") {
+    return {
+      countLabel: "Visible images",
+      description: "Only still images are shown on this page because Convert works with image sources.",
+      items: collections.imageAssets,
+      emptyMessage: "Upload a PNG, JPEG, or WebP file to populate this page.",
+    };
+  }
+
+  if (activeView === "crop-pad") {
+    return {
+      countLabel: "Crop / Pad ready",
+      description: "Crop / Pad accepts both video clips and supported still images, so both stay visible here.",
+      items: collections.cropPadAssets,
+      emptyMessage: "Upload a video or supported image file to populate this page.",
+    };
+  }
+
+  return {
+    countLabel: "Visible now",
+    description: "Showing every uploaded and generated file in the shared workspace.",
+    items: collections.assets,
+    emptyMessage: "Upload your first file to populate the shared library.",
+  };
 }
 
 function readSessionString(key: string, fallback: string) {
@@ -1195,6 +1825,31 @@ export function EditorDashboard({
   const [extractHeight, setExtractHeight] = useState("");
   const [extractFit, setExtractFit] = useState<ConvertImageFit>("contain");
   const [extractBackground, setExtractBackground] = useState("#ffffff");
+  const [extractAudioAssetId, setExtractAudioAssetId] = useState("");
+  const [extractAudioFormat, setExtractAudioFormat] =
+    useState<AudioExtractFormat>("mp3");
+  const [audioTrackAssetId, setAudioTrackAssetId] = useState("");
+  const [audioTrackMode, setAudioTrackMode] = useState<AudioTrackEditMode>("mute");
+  const [audioTrackReplacementAssetId, setAudioTrackReplacementAssetId] =
+    useState("");
+  const [audioTrackLoopReplacement, setAudioTrackLoopReplacement] =
+    useState(true);
+  const [changeSpeedAssetId, setChangeSpeedAssetId] = useState("");
+  const [changeSpeedRate, setChangeSpeedRate] = useState("1");
+  const [textOverlayAssetId, setTextOverlayAssetId] = useState("");
+  const [textOverlayText, setTextOverlayText] = useState("Sample caption");
+  const [textOverlayStartTime, setTextOverlayStartTime] = useState("");
+  const [textOverlayEndTime, setTextOverlayEndTime] = useState("");
+  const [textOverlayFontSize, setTextOverlayFontSize] = useState("42");
+  const [textOverlayFontColor, setTextOverlayFontColor] = useState("#ffffff");
+  const [textOverlayBackgroundColor, setTextOverlayBackgroundColor] =
+    useState("#111111");
+  const [textOverlayBackgroundOpacity, setTextOverlayBackgroundOpacity] =
+    useState("72");
+  const [textOverlayHorizontal, setTextOverlayHorizontal] =
+    useState<TextOverlayHorizontal>("center");
+  const [textOverlayVertical, setTextOverlayVertical] =
+    useState<TextOverlayVertical>("bottom");
   const [mergeAssetIds, setMergeAssetIds] = useState<string[]>([]);
   const [normalizePreset, setNormalizePreset] =
     useState<NormalizeTargetPreset>("hd-720p");
@@ -1218,6 +1873,7 @@ export function EditorDashboard({
   );
   const [errorMessage, setErrorMessage] = useState("");
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [isLibraryRefreshing, setIsLibraryRefreshing] = useState(false);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [hasRestoredSession, setHasRestoredSession] = useState(false);
   const [isRefreshing, startRefreshTransition] = useTransition();
@@ -1226,6 +1882,11 @@ export function EditorDashboard({
     (job) => job.status === "queued" || job.status === "processing",
   );
   const videoAssets = assets.filter(isVideoAsset);
+  const videoWithAudioAssets = videoAssets.filter(hasAudioStream);
+  const audioOnlyAssets = assets.filter(isAudioOnlyAsset);
+  const audioSourceAssets = assets.filter(hasAudioStream);
+  const audioTrackAssets = mergeUniqueAssets(videoAssets, audioSourceAssets);
+  const timedMediaAssets = assets.filter(isTimedMediaAsset);
   const imageAssets = assets.filter(isImageAsset);
   const cropPadAssets = assets.filter(isCropPadEligibleAsset);
   const selectedCompressAsset =
@@ -1250,6 +1911,47 @@ export function EditorDashboard({
     fit: extractFit,
     background: extractBackground,
   });
+  const selectedExtractAudioAsset =
+    videoWithAudioAssets.find((asset) => asset.id === extractAudioAssetId) ?? null;
+  const extractAudioTargetPlan = buildExtractAudioTargetPlan({
+    asset: selectedExtractAudioAsset,
+    format: extractAudioFormat,
+  });
+  const selectedAudioTrackAsset =
+    videoAssets.find((asset) => asset.id === audioTrackAssetId) ?? null;
+  const selectedAudioTrackReplacementAsset =
+    audioSourceAssets.find((asset) => asset.id === audioTrackReplacementAssetId) ?? null;
+  const audioTrackTargetPlan = buildAudioTrackEditTargetPlan({
+    asset: selectedAudioTrackAsset,
+    mode: audioTrackMode,
+    replacementAsset: selectedAudioTrackReplacementAsset,
+    loopReplacement: audioTrackLoopReplacement,
+  });
+  const selectedChangeSpeedAsset =
+    timedMediaAssets.find((asset) => asset.id === changeSpeedAssetId) ?? null;
+  const changeSpeedTargetPlan = buildPlaybackSpeedTargetPlan({
+    asset: selectedChangeSpeedAsset,
+    rate: changeSpeedRate,
+  });
+  const selectedTextOverlayAsset =
+    videoAssets.find((asset) => asset.id === textOverlayAssetId) ?? null;
+  const textOverlayTargetPlan = buildTextOverlayTargetPlan({
+    asset: selectedTextOverlayAsset,
+    text: textOverlayText,
+    startTime: textOverlayStartTime,
+    endTime: textOverlayEndTime,
+    fontSize: textOverlayFontSize,
+    fontColor: textOverlayFontColor,
+    backgroundColor: textOverlayBackgroundColor,
+    backgroundOpacity: textOverlayBackgroundOpacity,
+    horizontal: textOverlayHorizontal,
+    vertical: textOverlayVertical,
+  });
+  const textOverlayBackgroundPreview =
+    buildRgbaColorString(
+      textOverlayBackgroundColor,
+      Number(textOverlayBackgroundOpacity || "72"),
+    ) ?? "rgba(17, 17, 17, 0.72)";
   const selectedMergeAssets = videoAssets.filter((asset) =>
     mergeAssetIds.includes(asset.id),
   );
@@ -1285,12 +1987,25 @@ export function EditorDashboard({
   const selectedConvertAsset =
     imageAssets.find((asset) => asset.id === convertAssetId) ?? null;
   const currentViewMeta = editorViewMeta[activeView];
+  const assetLibraryScope = getAssetLibraryScope(activeView, {
+    assets,
+    videoAssets,
+    imageAssets,
+    cropPadAssets,
+    videoWithAudioAssets,
+    audioTrackAssets,
+    timedMediaAssets,
+  });
+  const assetLibraryAssets = assetLibraryScope.items;
 
   function applyAssetsSnapshot(nextAssets: MediaAsset[]) {
     startRefreshTransition(() => {
       setAssets(nextAssets);
 
       const nextVideoAssets = nextAssets.filter(isVideoAsset);
+      const nextVideoWithAudioAssets = nextVideoAssets.filter(hasAudioStream);
+      const nextAudioSourceAssets = nextAssets.filter(hasAudioStream);
+      const nextTimedMediaAssets = nextAssets.filter(isTimedMediaAsset);
       const nextCropPadAssets = nextAssets.filter(isCropPadEligibleAsset);
       const nextImageAssets = nextAssets.filter(isImageAsset);
 
@@ -1299,6 +2014,11 @@ export function EditorDashboard({
         setTrimEndTime("5");
         setCompressAssetId("");
         setExtractAssetId("");
+        setExtractAudioAssetId("");
+        setAudioTrackAssetId("");
+        setAudioTrackReplacementAssetId("");
+        setChangeSpeedAssetId("");
+        setTextOverlayAssetId("");
         setMergeAssetIds([]);
         setCropPadAssetId("");
         setCropPadWidth("");
@@ -1337,6 +2057,52 @@ export function EditorDashboard({
             ? String(Number(Math.min(1, nextExtractAsset.metadata.durationSeconds).toFixed(2)))
             : "0",
         );
+      }
+
+      const hasSelectedExtractAudioAsset = nextVideoWithAudioAssets.some(
+        (asset) => asset.id === extractAudioAssetId,
+      );
+
+      if (!hasSelectedExtractAudioAsset) {
+        setExtractAudioAssetId(nextVideoWithAudioAssets[0]?.id ?? "");
+      }
+
+      const hasSelectedAudioTrackAsset = nextVideoAssets.some(
+        (asset) => asset.id === audioTrackAssetId,
+      );
+
+      if (!hasSelectedAudioTrackAsset) {
+        const nextAudioTrackAssetId = nextVideoAssets[0]?.id ?? "";
+        setAudioTrackAssetId(nextAudioTrackAssetId);
+        setAudioTrackReplacementAssetId(
+          getDefaultReplacementAudioId(nextAudioSourceAssets, nextAudioTrackAssetId),
+        );
+      } else {
+        const hasSelectedAudioReplacement = nextAudioSourceAssets.some(
+          (asset) => asset.id === audioTrackReplacementAssetId,
+        );
+
+        if (!hasSelectedAudioReplacement) {
+          setAudioTrackReplacementAssetId(
+            getDefaultReplacementAudioId(nextAudioSourceAssets, audioTrackAssetId),
+          );
+        }
+      }
+
+      const hasSelectedChangeSpeedAsset = nextTimedMediaAssets.some(
+        (asset) => asset.id === changeSpeedAssetId,
+      );
+
+      if (!hasSelectedChangeSpeedAsset) {
+        setChangeSpeedAssetId(nextTimedMediaAssets[0]?.id ?? "");
+      }
+
+      const hasSelectedTextOverlayAsset = nextVideoAssets.some(
+        (asset) => asset.id === textOverlayAssetId,
+      );
+
+      if (!hasSelectedTextOverlayAsset) {
+        setTextOverlayAssetId(nextVideoAssets[0]?.id ?? "");
       }
 
       setMergeAssetIds((current) => {
@@ -1402,6 +2168,8 @@ export function EditorDashboard({
   }
 
   async function handleRefresh() {
+    setIsLibraryRefreshing(true);
+
     try {
       await ensureBackendReady("Refreshing uploads and queue history.");
       await Promise.all([loadAssets(), loadJobs()]);
@@ -1413,6 +2181,8 @@ export function EditorDashboard({
           ? error.message
           : "Could not refresh your files and processing history.",
       );
+    } finally {
+      setIsLibraryRefreshing(false);
     }
   }
 
@@ -1460,6 +2230,67 @@ export function EditorDashboard({
     );
     setExtractBackground(
       readSessionString(sessionStorageKeys.extractBackground, "#ffffff"),
+    );
+    setExtractAudioAssetId(
+      readSessionString(sessionStorageKeys.extractAudioAssetId, ""),
+    );
+    setExtractAudioFormat(
+      readSessionString(
+        sessionStorageKeys.extractAudioFormat,
+        "mp3",
+      ) as AudioExtractFormat,
+    );
+    setAudioTrackAssetId(
+      readSessionString(sessionStorageKeys.audioTrackAssetId, ""),
+    );
+    setAudioTrackMode(
+      readSessionString(sessionStorageKeys.audioTrackMode, "mute") as AudioTrackEditMode,
+    );
+    setAudioTrackReplacementAssetId(
+      readSessionString(sessionStorageKeys.audioTrackReplacementAssetId, ""),
+    );
+    setAudioTrackLoopReplacement(
+      readSessionString(sessionStorageKeys.audioTrackLoopReplacement, "true") !== "false",
+    );
+    setChangeSpeedAssetId(
+      readSessionString(sessionStorageKeys.changeSpeedAssetId, ""),
+    );
+    setChangeSpeedRate(readSessionString(sessionStorageKeys.changeSpeedRate, "1"));
+    setTextOverlayAssetId(
+      readSessionString(sessionStorageKeys.textOverlayAssetId, ""),
+    );
+    setTextOverlayText(
+      readSessionString(sessionStorageKeys.textOverlayText, "Sample caption"),
+    );
+    setTextOverlayStartTime(
+      readSessionString(sessionStorageKeys.textOverlayStartTime, ""),
+    );
+    setTextOverlayEndTime(
+      readSessionString(sessionStorageKeys.textOverlayEndTime, ""),
+    );
+    setTextOverlayFontSize(
+      readSessionString(sessionStorageKeys.textOverlayFontSize, "42"),
+    );
+    setTextOverlayFontColor(
+      readSessionString(sessionStorageKeys.textOverlayFontColor, "#ffffff"),
+    );
+    setTextOverlayBackgroundColor(
+      readSessionString(sessionStorageKeys.textOverlayBackgroundColor, "#111111"),
+    );
+    setTextOverlayBackgroundOpacity(
+      readSessionString(sessionStorageKeys.textOverlayBackgroundOpacity, "72"),
+    );
+    setTextOverlayHorizontal(
+      readSessionString(
+        sessionStorageKeys.textOverlayHorizontal,
+        "center",
+      ) as TextOverlayHorizontal,
+    );
+    setTextOverlayVertical(
+      readSessionString(
+        sessionStorageKeys.textOverlayVertical,
+        "bottom",
+      ) as TextOverlayVertical,
     );
     setMergeAssetIds(readSessionStringArray(sessionStorageKeys.mergeAssetIds));
     setNormalizePreset(
@@ -1590,6 +2421,26 @@ export function EditorDashboard({
       setIsMergeHelpOpen(false);
     }
   }, [mergeRequiresNormalization]);
+
+  useEffect(() => {
+    if (!hasRestoredSession || audioTrackMode !== "replace") {
+      return;
+    }
+
+    if (selectedAudioTrackReplacementAsset) {
+      return;
+    }
+
+    setAudioTrackReplacementAssetId(
+      getDefaultReplacementAudioId(audioSourceAssets, audioTrackAssetId),
+    );
+  }, [
+    audioSourceAssets,
+    audioTrackAssetId,
+    audioTrackMode,
+    hasRestoredSession,
+    selectedAudioTrackReplacementAsset,
+  ]);
 
   useEffect(() => {
     if (!hasRestoredSession) {
@@ -1733,6 +2584,201 @@ export function EditorDashboard({
       extractBackground,
     );
   }, [hasRestoredSession, extractBackground]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.extractAudioAssetId,
+      extractAudioAssetId,
+    );
+  }, [extractAudioAssetId, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.extractAudioFormat,
+      extractAudioFormat,
+    );
+  }, [extractAudioFormat, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.audioTrackAssetId,
+      audioTrackAssetId,
+    );
+  }, [audioTrackAssetId, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.audioTrackMode,
+      audioTrackMode,
+    );
+  }, [audioTrackMode, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.audioTrackReplacementAssetId,
+      audioTrackReplacementAssetId,
+    );
+  }, [audioTrackReplacementAssetId, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.audioTrackLoopReplacement,
+      String(audioTrackLoopReplacement),
+    );
+  }, [audioTrackLoopReplacement, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.changeSpeedAssetId,
+      changeSpeedAssetId,
+    );
+  }, [changeSpeedAssetId, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.changeSpeedRate,
+      changeSpeedRate,
+    );
+  }, [changeSpeedRate, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.textOverlayAssetId,
+      textOverlayAssetId,
+    );
+  }, [hasRestoredSession, textOverlayAssetId]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(sessionStorageKeys.textOverlayText, textOverlayText);
+  }, [hasRestoredSession, textOverlayText]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.textOverlayStartTime,
+      textOverlayStartTime,
+    );
+  }, [hasRestoredSession, textOverlayStartTime]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.textOverlayEndTime,
+      textOverlayEndTime,
+    );
+  }, [hasRestoredSession, textOverlayEndTime]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.textOverlayFontSize,
+      textOverlayFontSize,
+    );
+  }, [hasRestoredSession, textOverlayFontSize]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.textOverlayFontColor,
+      textOverlayFontColor,
+    );
+  }, [hasRestoredSession, textOverlayFontColor]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.textOverlayBackgroundColor,
+      textOverlayBackgroundColor,
+    );
+  }, [hasRestoredSession, textOverlayBackgroundColor]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.textOverlayBackgroundOpacity,
+      textOverlayBackgroundOpacity,
+    );
+  }, [hasRestoredSession, textOverlayBackgroundOpacity]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.textOverlayHorizontal,
+      textOverlayHorizontal,
+    );
+  }, [hasRestoredSession, textOverlayHorizontal]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.textOverlayVertical,
+      textOverlayVertical,
+    );
+  }, [hasRestoredSession, textOverlayVertical]);
 
   useEffect(() => {
     if (!hasRestoredSession) {
@@ -2018,6 +3064,164 @@ export function EditorDashboard({
       setErrorMessage(
         error instanceof Error ? error.message : "Frame extraction job failed.",
       );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleExtractAudioJob() {
+    if (!extractAudioAssetId) {
+      setErrorMessage("Choose one video clip before extracting audio.");
+      return;
+    }
+
+    if (!extractAudioTargetPlan.target) {
+      setErrorMessage(
+        extractAudioTargetPlan.errorMessage ??
+          "Audio extraction target could not be prepared.",
+      );
+      return;
+    }
+
+    setBusyAction("extract-audio");
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Preparing your audio extraction request.");
+      const response = await fetchJson<JobResponse>("/api/v1/jobs/extract-audio", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          assetId: extractAudioAssetId,
+          target: extractAudioTargetPlan.target,
+        }),
+      });
+
+      await loadJobs();
+      setFeedback(`Audio extraction job ${response.item.id.slice(0, 8)} has been queued.`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Audio extraction job failed.",
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleEditAudioTrackJob() {
+    if (!audioTrackAssetId) {
+      setErrorMessage("Choose one video clip before editing its soundtrack.");
+      return;
+    }
+
+    if (!audioTrackTargetPlan.target) {
+      setErrorMessage(
+        audioTrackTargetPlan.errorMessage ??
+          "Audio track target could not be prepared.",
+      );
+      return;
+    }
+
+    setBusyAction("audio-track");
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Preparing your audio track edit request.");
+      const response = await fetchJson<JobResponse>("/api/v1/jobs/edit-audio-track", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          assetId: audioTrackAssetId,
+          target: audioTrackTargetPlan.target,
+        }),
+      });
+
+      await loadJobs();
+      setFeedback(`Audio track job ${response.item.id.slice(0, 8)} has been queued.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Audio track job failed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleChangeSpeedJob() {
+    if (!changeSpeedAssetId) {
+      setErrorMessage("Choose one video or audio file before changing speed.");
+      return;
+    }
+
+    if (!changeSpeedTargetPlan.target) {
+      setErrorMessage(
+        changeSpeedTargetPlan.errorMessage ??
+          "Playback speed target could not be prepared.",
+      );
+      return;
+    }
+
+    setBusyAction("change-speed");
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Preparing your playback speed request.");
+      const response = await fetchJson<JobResponse>("/api/v1/jobs/change-speed", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          assetId: changeSpeedAssetId,
+          target: changeSpeedTargetPlan.target,
+        }),
+      });
+
+      await loadJobs();
+      setFeedback(`Speed change job ${response.item.id.slice(0, 8)} has been queued.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Speed change job failed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleTextOverlayJob() {
+    if (!textOverlayAssetId) {
+      setErrorMessage("Choose one video clip before adding text.");
+      return;
+    }
+
+    if (!textOverlayTargetPlan.target) {
+      setErrorMessage(
+        textOverlayTargetPlan.errorMessage ??
+          "Text overlay target could not be prepared.",
+      );
+      return;
+    }
+
+    setBusyAction("text-overlay");
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Preparing your text overlay request.");
+      const response = await fetchJson<JobResponse>("/api/v1/jobs/overlay-text", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          assetId: textOverlayAssetId,
+          target: textOverlayTargetPlan.target,
+        }),
+      });
+
+      await loadJobs();
+      setFeedback(`Text overlay job ${response.item.id.slice(0, 8)} has been queued.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Text overlay job failed.");
     } finally {
       setBusyAction(null);
     }
@@ -2755,6 +3959,643 @@ export function EditorDashboard({
     );
   }
 
+  function renderExtractAudioPanel() {
+    const selectedExtractAudioFormat = audioExtractFormatOptions.find(
+      (option) => option.value === extractAudioFormat,
+    );
+
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Extract audio function"
+          title="Pull the soundtrack out of one video clip"
+          badge="Function"
+        />
+
+        <div className="mt-6 space-y-4">
+          {videoWithAudioAssets.length > 0 ? (
+            <div className="grid max-h-[16rem] gap-3 overflow-y-auto pr-1">
+              {videoWithAudioAssets.map((asset) => (
+                <SelectableAssetCard
+                  key={asset.id}
+                  asset={asset}
+                  selected={extractAudioAssetId === asset.id}
+                  inputType="radio"
+                  inputName="extract-audio-asset"
+                  onSelect={() => {
+                    setExtractAudioAssetId(asset.id);
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+              Upload a video that already contains audio to enable audio extraction.
+            </div>
+          )}
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Output format
+              <select
+                value={extractAudioFormat}
+                onChange={(event) => {
+                  setExtractAudioFormat(event.target.value as AudioExtractFormat);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {audioExtractFormatOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="rounded-[1.5rem] bg-white/78 px-4 py-4">
+              <p className="text-sm font-semibold text-foreground">
+                {selectedExtractAudioFormat?.label ?? "Audio format"}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-muted">
+                {selectedExtractAudioFormat?.description ??
+                  "Choose how the extracted soundtrack should be exported."}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Source</p>
+              <p className="mt-2 text-sm font-semibold">
+                {selectedExtractAudioAsset?.originalName ?? "Choose a video"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Target summary</p>
+              <p className="mt-2 text-sm font-semibold">
+                {formatExtractAudioTargetSummary(extractAudioTargetPlan.target)}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-[1.5rem] bg-white/78 px-4 py-4 text-sm leading-6 text-muted">
+            Use this when you need the voice track, music, or ambience as a separate file for
+            another step.
+          </div>
+
+          {extractAudioTargetPlan.errorMessage ? (
+            <p className="rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
+              {extractAudioTargetPlan.errorMessage}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              void handleExtractAudioJob();
+            }}
+            disabled={
+              busyAction === "extract-audio" ||
+              !extractAudioAssetId ||
+              !extractAudioTargetPlan.target
+            }
+            className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busyAction === "extract-audio"
+              ? "Queueing audio extraction..."
+              : "Queue extract audio job"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  function renderAudioTrackPanel() {
+    const selectedAudioTrackMode = audioTrackModeOptions.find(
+      (option) => option.value === audioTrackMode,
+    );
+
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Audio track function"
+          title="Mute a video or replace its soundtrack"
+          badge="Function"
+        />
+
+        <div className="mt-6 space-y-4">
+          {videoAssets.length > 0 ? (
+            <div className="grid max-h-[16rem] gap-3 overflow-y-auto pr-1">
+              {videoAssets.map((asset) => (
+                <SelectableAssetCard
+                  key={asset.id}
+                  asset={asset}
+                  selected={audioTrackAssetId === asset.id}
+                  inputType="radio"
+                  inputName="audio-track-asset"
+                  onSelect={() => {
+                    setAudioTrackAssetId(asset.id);
+
+                    if (
+                      !audioTrackReplacementAssetId ||
+                      audioTrackReplacementAssetId === asset.id
+                    ) {
+                      setAudioTrackReplacementAssetId(
+                        getDefaultReplacementAudioId(audioSourceAssets, asset.id),
+                      );
+                    }
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+              Upload a video clip to enable soundtrack editing.
+            </div>
+          )}
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Mode
+              <select
+                value={audioTrackMode}
+                onChange={(event) => {
+                  setAudioTrackMode(event.target.value as AudioTrackEditMode);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {audioTrackModeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="rounded-[1.5rem] bg-white/78 px-4 py-4">
+              <p className="text-sm font-semibold text-foreground">
+                {selectedAudioTrackMode?.label ?? "Audio mode"}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-muted">
+                {selectedAudioTrackMode?.description ??
+                  "Choose whether the next export should be silent or use a new soundtrack."}
+              </p>
+            </div>
+          </div>
+
+          {audioTrackMode === "replace" ? (
+            <div className="space-y-4 rounded-[1.5rem] bg-white/78 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Replacement source</p>
+                  <p className="mt-1 text-sm leading-6 text-muted">
+                    Choose any uploaded file that already contains audio.
+                  </p>
+                </div>
+                <label className="inline-flex items-center gap-2 text-sm font-medium text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={audioTrackLoopReplacement}
+                    onChange={(event) => {
+                      setAudioTrackLoopReplacement(event.target.checked);
+                    }}
+                    className="h-4 w-4"
+                  />
+                  Loop to fit clip
+                </label>
+              </div>
+
+              {audioSourceAssets.length > 0 ? (
+                <div className="grid max-h-[16rem] gap-3 overflow-y-auto pr-1">
+                  {audioSourceAssets.map((asset) => (
+                    <SelectableAssetCard
+                      key={asset.id}
+                      asset={asset}
+                      selected={audioTrackReplacementAssetId === asset.id}
+                      inputType="radio"
+                      inputName="audio-track-replacement"
+                      onSelect={() => {
+                        setAudioTrackReplacementAssetId(asset.id);
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-[1.4rem] bg-white p-4 text-sm leading-6 text-muted">
+                  Upload an audio file or another video with sound before using Replace audio.
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Video target</p>
+              <p className="mt-2 text-sm font-semibold">
+                {selectedAudioTrackAsset?.originalName ?? "Choose a video"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Audio source</p>
+              <p className="mt-2 text-sm font-semibold">
+                {audioTrackMode === "mute"
+                  ? "Muted export"
+                  : selectedAudioTrackReplacementAsset?.originalName ?? "Choose audio"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Target summary</p>
+              <p className="mt-2 text-sm font-semibold">
+                {formatAudioTrackEditTargetSummary(
+                  audioTrackTargetPlan.target,
+                  selectedAudioTrackReplacementAsset,
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-[1.5rem] bg-white/78 px-4 py-4 text-sm leading-6 text-muted">
+            Output stays MP4 so the edited clip remains easy to preview, queue again, and merge
+            later.
+          </div>
+
+          {audioTrackTargetPlan.errorMessage ? (
+            <p className="rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
+              {audioTrackTargetPlan.errorMessage}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              void handleEditAudioTrackJob();
+            }}
+            disabled={
+              busyAction === "audio-track" ||
+              !audioTrackAssetId ||
+              !audioTrackTargetPlan.target
+            }
+            className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busyAction === "audio-track"
+              ? "Queueing audio track edit..."
+              : "Queue audio track job"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  function renderChangeSpeedPanel() {
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Change speed function"
+          title="Speed up or slow down video and audio files"
+          badge="Function"
+        />
+
+        <div className="mt-6 space-y-4">
+          {timedMediaAssets.length > 0 ? (
+            <div className="grid max-h-[16rem] gap-3 overflow-y-auto pr-1">
+              {timedMediaAssets.map((asset) => (
+                <SelectableAssetCard
+                  key={asset.id}
+                  asset={asset}
+                  selected={changeSpeedAssetId === asset.id}
+                  inputType="radio"
+                  inputName="change-speed-asset"
+                  onSelect={() => {
+                    setChangeSpeedAssetId(asset.id);
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+              Upload a video clip or audio file to enable playback speed changes.
+            </div>
+          )}
+
+          <label className="grid gap-2 text-sm font-medium text-foreground">
+            Playback rate (0.25x to 4x)
+            <input
+              type="number"
+              min="0.25"
+              max="4"
+              step="0.05"
+              value={changeSpeedRate}
+              onChange={(event) => {
+                setChangeSpeedRate(event.target.value);
+              }}
+              className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+            />
+          </label>
+
+          <div className="flex flex-wrap gap-2">
+            {speedPresetOptions.map((rate) => {
+              const isActive = Number(changeSpeedRate) === rate;
+
+              return (
+                <button
+                  key={rate}
+                  type="button"
+                  onClick={() => {
+                    setChangeSpeedRate(String(rate));
+                  }}
+                  className={
+                    isActive
+                      ? "rounded-full bg-[#111111] px-3.5 py-2 text-sm font-semibold text-white"
+                      : "rounded-full border border-panel-border bg-white px-3.5 py-2 text-sm font-semibold text-foreground"
+                  }
+                >
+                  {rate}x
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Source</p>
+              <p className="mt-2 text-sm font-semibold">
+                {selectedChangeSpeedAsset?.originalName ?? "Choose media"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Target summary</p>
+              <p className="mt-2 text-sm font-semibold">
+                {formatPlaybackSpeedTargetSummary(
+                  selectedChangeSpeedAsset,
+                  changeSpeedTargetPlan.target,
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-[1.5rem] bg-white/78 px-4 py-4 text-sm leading-6 text-muted">
+            Video sources stay video, while audio-only sources export as MP3 after the speed
+            change.
+          </div>
+
+          {changeSpeedTargetPlan.errorMessage ? (
+            <p className="rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
+              {changeSpeedTargetPlan.errorMessage}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              void handleChangeSpeedJob();
+            }}
+            disabled={
+              busyAction === "change-speed" ||
+              !changeSpeedAssetId ||
+              !changeSpeedTargetPlan.target
+            }
+            className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busyAction === "change-speed"
+              ? "Queueing speed change..."
+              : "Queue speed change job"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  function renderTextOverlayPanel() {
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Text overlay function"
+          title="Burn one title or caption directly into a video"
+          badge="Function"
+        />
+
+        <div className="mt-6 space-y-4">
+          {videoAssets.length > 0 ? (
+            <div className="grid max-h-[18rem] gap-3 overflow-y-auto pr-1">
+              {videoAssets.map((asset) => (
+                <SelectableAssetCard
+                  key={asset.id}
+                  asset={asset}
+                  selected={textOverlayAssetId === asset.id}
+                  inputType="radio"
+                  inputName="text-overlay-asset"
+                  onSelect={() => {
+                    setTextOverlayAssetId(asset.id);
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+              Upload a video clip to enable text overlay.
+            </div>
+          )}
+
+          <label className="grid gap-2 text-sm font-medium text-foreground">
+            Overlay text
+            <textarea
+              value={textOverlayText}
+              onChange={(event) => {
+                setTextOverlayText(event.target.value);
+              }}
+              rows={4}
+              placeholder="Enter a title, caption, subtitle line, or short note."
+              className="min-h-[7.5rem] rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+            />
+          </label>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Start time (optional)
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={textOverlayStartTime}
+                onChange={(event) => {
+                  setTextOverlayStartTime(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              End time (optional)
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={textOverlayEndTime}
+                onChange={(event) => {
+                  setTextOverlayEndTime(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Font size
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={textOverlayFontSize}
+                onChange={(event) => {
+                  setTextOverlayFontSize(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Horizontal position
+              <select
+                value={textOverlayHorizontal}
+                onChange={(event) => {
+                  setTextOverlayHorizontal(
+                    event.target.value as TextOverlayHorizontal,
+                  );
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {textOverlayHorizontalOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Font color
+              <div className="flex items-center gap-3 rounded-2xl border border-panel-border bg-white px-4 py-3">
+                <input
+                  type="color"
+                  value={textOverlayFontColor}
+                  onChange={(event) => {
+                    setTextOverlayFontColor(event.target.value);
+                  }}
+                  className="h-10 w-14 rounded-md border border-panel-border bg-transparent"
+                />
+                <span className="text-sm text-muted">{textOverlayFontColor}</span>
+              </div>
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Vertical position
+              <select
+                value={textOverlayVertical}
+                onChange={(event) => {
+                  setTextOverlayVertical(event.target.value as TextOverlayVertical);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {textOverlayVerticalOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground lg:col-span-2">
+              Box color (RGBA)
+              <div className="grid gap-3 rounded-2xl border border-panel-border bg-white px-4 py-3 sm:grid-cols-[auto_1fr] sm:items-center">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={textOverlayBackgroundColor}
+                    onChange={(event) => {
+                      setTextOverlayBackgroundColor(event.target.value);
+                    }}
+                    className="h-10 w-14 rounded-md border border-panel-border bg-transparent"
+                  />
+                  <div
+                    className="h-10 w-14 rounded-md border border-panel-border"
+                    style={{ backgroundColor: textOverlayBackgroundPreview }}
+                    title={textOverlayBackgroundPreview}
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <span className="text-sm text-muted">{textOverlayBackgroundPreview}</span>
+                    <span className="rounded-full bg-[#f3ede4] px-2.5 py-1 text-xs font-semibold text-foreground">
+                      {textOverlayBackgroundOpacity}% opacity
+                    </span>
+                  </div>
+
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={textOverlayBackgroundOpacity}
+                    onChange={(event) => {
+                      setTextOverlayBackgroundOpacity(event.target.value);
+                    }}
+                    className="w-full accent-[#111111]"
+                  />
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Source</p>
+              <p className="mt-2 text-sm font-semibold">
+                {selectedTextOverlayAsset?.originalName ?? "Choose a video"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Target summary</p>
+              <p className="mt-2 text-sm font-semibold">
+                {formatTextOverlayTargetSummary(textOverlayTargetPlan.target)}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-[1.5rem] bg-white/78 px-4 py-4 text-sm leading-6 text-muted">
+            This version burns the text directly into the MP4 export. FFmpeg can also render
+            real subtitle files later, but this page already covers titles, captions, and
+            simple on-screen notes.
+          </div>
+
+          {textOverlayTargetPlan.errorMessage ? (
+            <p className="rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
+              {textOverlayTargetPlan.errorMessage}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              void handleTextOverlayJob();
+            }}
+            disabled={
+              busyAction === "text-overlay" ||
+              !textOverlayAssetId ||
+              !textOverlayTargetPlan.target
+            }
+            className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busyAction === "text-overlay"
+              ? "Queueing text overlay..."
+              : "Queue text overlay job"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
   function renderMergePanel() {
     return (
       <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
@@ -3397,6 +5238,22 @@ export function EditorDashboard({
       return renderExtractFramePanel();
     }
 
+    if (activeView === "extract-audio") {
+      return renderExtractAudioPanel();
+    }
+
+    if (activeView === "audio-track") {
+      return renderAudioTrackPanel();
+    }
+
+    if (activeView === "change-speed") {
+      return renderChangeSpeedPanel();
+    }
+
+    if (activeView === "text-overlay") {
+      return renderTextOverlayPanel();
+    }
+
     if (activeView === "merge") {
       return renderMergePanel();
     }
@@ -3620,36 +5477,54 @@ export function EditorDashboard({
               Shared asset library
             </p>
             <h2 className="mt-3 text-2xl font-semibold">Uploads and generated outputs</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
+              {assetLibraryScope.description}
+            </p>
           </div>
           <button
             type="button"
             onClick={() => {
               void handleRefresh();
             }}
-            className="rounded-full border border-panel-border bg-white/80 px-4 py-2 text-sm font-semibold text-foreground"
+            disabled={isLibraryRefreshing}
+            className="inline-flex items-center gap-2 rounded-full border border-panel-border bg-white/80 px-4 py-2 text-sm font-semibold text-foreground transition disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Refresh
+            {isLibraryRefreshing ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="h-4 w-4 animate-spin rounded-full border-2 border-[#111111]/20 border-t-[#111111]"
+                />
+                Refreshing...
+              </>
+            ) : (
+              "Refresh"
+            )}
           </button>
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           <div className="rounded-[1.35rem] bg-white/75 px-4 py-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-muted">
+              {assetLibraryScope.countLabel}
+            </p>
+            <p className="mt-2 text-lg font-semibold">{assetLibraryAssets.length}</p>
+          </div>
+          <div className="rounded-[1.35rem] bg-white/75 px-4 py-4">
             <p className="text-xs uppercase tracking-[0.16em] text-muted">All assets</p>
             <p className="mt-2 text-lg font-semibold">{assets.length}</p>
           </div>
           <div className="rounded-[1.35rem] bg-white/75 px-4 py-4">
-            <p className="text-xs uppercase tracking-[0.16em] text-muted">Video-ready</p>
-            <p className="mt-2 text-lg font-semibold">{videoAssets.length}</p>
-          </div>
-          <div className="rounded-[1.35rem] bg-white/75 px-4 py-4">
-            <p className="text-xs uppercase tracking-[0.16em] text-muted">Image-ready</p>
-            <p className="mt-2 text-lg font-semibold">{imageAssets.length}</p>
+            <p className="text-xs uppercase tracking-[0.16em] text-muted">Current outputs</p>
+            <p className="mt-2 text-lg font-semibold">
+              {assets.filter((asset) => asset.kind === "output").length}
+            </p>
           </div>
         </div>
 
         <div className="mt-6 grid max-h-[34rem] gap-4 overflow-y-auto pr-1">
-          {assets.length > 0 ? (
-            assets.map((asset) => (
+          {assetLibraryAssets.length > 0 ? (
+            assetLibraryAssets.map((asset) => (
               <article
                 key={asset.id}
                 className="rounded-[1.2rem] border border-panel-border bg-white/84 p-3 shadow-sm"
@@ -3718,7 +5593,7 @@ export function EditorDashboard({
             ))
           ) : (
             <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
-              Upload files to populate the shared asset library.
+              {assetLibraryScope.emptyMessage}
             </div>
           )}
         </div>

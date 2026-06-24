@@ -58,6 +58,10 @@ export type VideoCompressionEncoderPreset =
 export type CropPadMode = "crop" | "pad";
 export type CropPadAnchorX = "left" | "center" | "right";
 export type CropPadAnchorY = "top" | "center" | "bottom";
+export type TextOverlayHorizontal = "left" | "center" | "right";
+export type TextOverlayVertical = "top" | "center" | "bottom";
+export type AudioExtractFormat = "mp3" | "m4a" | "wav";
+export type AudioTrackEditMode = "mute" | "replace";
 
 export type VideoCompressionTarget = {
   mode: VideoCompressionMode;
@@ -87,6 +91,31 @@ export type ExtractFrameTarget = {
   background?: string;
 };
 
+export type AudioExtractTarget = {
+  format: AudioExtractFormat;
+};
+
+export type AudioTrackEditTarget = {
+  mode: AudioTrackEditMode;
+  replacementAssetId?: string;
+  loopReplacement?: boolean;
+};
+
+export type PlaybackSpeedTarget = {
+  rate: number;
+};
+
+export type TextOverlayTarget = {
+  text: string;
+  startTime?: number;
+  endTime?: number;
+  fontSize?: number;
+  fontColor?: string;
+  backgroundColor?: string;
+  horizontal?: TextOverlayHorizontal;
+  vertical?: TextOverlayVertical;
+};
+
 export type CropPadTarget = {
   mode: CropPadMode;
   width: number;
@@ -104,6 +133,10 @@ export type ProcessingJob = {
     | "normalize"
     | "compress-video"
     | "extract-frame"
+    | "extract-audio"
+    | "edit-audio-track"
+    | "change-speed"
+    | "overlay-text"
     | "crop-pad"
     | "convert-image";
   status: "queued" | "processing" | "completed" | "failed";
@@ -123,6 +156,10 @@ export type ProcessingJob = {
       | NormalizeTargetProfile
       | VideoCompressionTarget
       | ExtractFrameTarget
+      | AudioExtractTarget
+      | AudioTrackEditTarget
+      | PlaybackSpeedTarget
+      | TextOverlayTarget
       | CropPadTarget
       | ConvertImageTarget;
   };

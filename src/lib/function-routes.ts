@@ -3,6 +3,10 @@ export type EditorView =
   | "trim"
   | "compress"
   | "extract-frame"
+  | "extract-audio"
+  | "audio-track"
+  | "change-speed"
+  | "text-overlay"
   | "merge"
   | "normalize"
   | "crop-pad"
@@ -38,6 +42,34 @@ export const functionRouteOptions: Array<{
     label: "Extract frame",
     shortLabel: "Frame",
     description: "Capture one still frame from a video and export it as PNG, JPEG, or WebP.",
+  },
+  {
+    view: "extract-audio",
+    href: "/functions/extract-audio",
+    label: "Extract audio",
+    shortLabel: "Audio",
+    description: "Pull the audio track out of a video and export it as MP3, M4A, or WAV.",
+  },
+  {
+    view: "audio-track",
+    href: "/functions/audio-track",
+    label: "Mute / replace audio",
+    shortLabel: "Track",
+    description: "Mute a video completely or replace its soundtrack with another uploaded audio source.",
+  },
+  {
+    view: "change-speed",
+    href: "/functions/change-speed",
+    label: "Speed up / slow down",
+    shortLabel: "Speed",
+    description: "Adjust playback speed for a video or audio file while keeping the workflow export-ready.",
+  },
+  {
+    view: "text-overlay",
+    href: "/functions/text-overlay",
+    label: "Add text overlay",
+    shortLabel: "Text",
+    description: "Burn one title, caption, or short note directly into a video export.",
   },
   {
     view: "merge",
@@ -100,6 +132,30 @@ export const editorViewMeta: Record<
     eyebrow: "Function",
     description:
       "Pick one moment in a clip and export that frame as a standalone image file.",
+  },
+  "extract-audio": {
+    label: "Extract audio",
+    eyebrow: "Function",
+    description:
+      "Take the soundtrack out of a video and export it as a standalone audio file.",
+  },
+  "audio-track": {
+    label: "Audio track",
+    eyebrow: "Function",
+    description:
+      "Mute a video or replace its soundtrack with another uploaded audio source.",
+  },
+  "change-speed": {
+    label: "Change speed",
+    eyebrow: "Function",
+    description:
+      "Speed up or slow down a video or audio file while preparing a new export.",
+  },
+  "text-overlay": {
+    label: "Text overlay",
+    eyebrow: "Function",
+    description:
+      "Add a burned-in title, caption, or note directly on top of one video export.",
   },
   merge: {
     label: "Merge",
