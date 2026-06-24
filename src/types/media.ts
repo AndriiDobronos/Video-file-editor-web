@@ -12,6 +12,40 @@ export type MediaMetadata = {
   audioChannels: number | null;
 };
 
+export type MediaInspectionStream = {
+  index: number;
+  codecType: string | null;
+  codecName: string | null;
+  codecLongName: string | null;
+  width: number | null;
+  height: number | null;
+  pixelFormat: string | null;
+  frameRate: string | null;
+  averageFrameRate: string | null;
+  sampleAspectRatio: string | null;
+  displayAspectRatio: string | null;
+  bitRate: number | null;
+  durationSeconds: number | null;
+  audioSampleRate: number | null;
+  audioChannels: number | null;
+  audioChannelLayout: string | null;
+  rotationDegrees: number | null;
+};
+
+export type MediaInspection = {
+  formatName: string | null;
+  formatLongName: string | null;
+  durationSeconds: number | null;
+  sizeBytes: number | null;
+  bitRate: number | null;
+  probeScore: number | null;
+  streamCount: number;
+  videoStreamCount: number;
+  audioStreamCount: number;
+  inspectedAt: string;
+  streams: MediaInspectionStream[];
+};
+
 export type MediaAsset = {
   id: string;
   kind: "upload" | "output";
@@ -73,6 +107,17 @@ export type VideoCompressionTarget = {
   videoBitrateKbps?: number;
   audioBitrateKbps?: number;
   encoderPreset?: VideoCompressionEncoderPreset;
+};
+
+export type AnimationExportFormat = "gif" | "webp";
+
+export type AnimationExportTarget = {
+  format: AnimationExportFormat;
+  startTime: number;
+  durationSeconds: number;
+  width?: number;
+  fps?: number;
+  quality?: number;
 };
 
 export type ConvertImageTarget = {
@@ -150,6 +195,7 @@ export type ProcessingJob = {
     | "transition-merge"
     | "normalize"
     | "compress-video"
+    | "export-animation"
     | "extract-frame"
     | "extract-audio"
     | "edit-audio-track"
@@ -175,6 +221,7 @@ export type ProcessingJob = {
       | NormalizeTargetProfile
       | TransitionMergeTarget
       | VideoCompressionTarget
+      | AnimationExportTarget
       | ExtractFrameTarget
       | AudioExtractTarget
       | AudioTrackEditTarget

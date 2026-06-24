@@ -6,6 +6,7 @@ export async function generateStaticParams() {
   return [
     { view: "trim" },
     { view: "compress" },
+    { view: "animation-export" },
     { view: "extract-frame" },
     { view: "extract-audio" },
     { view: "audio-track" },

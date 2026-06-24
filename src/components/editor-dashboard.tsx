@@ -9,6 +9,8 @@ import {
   type EditorView,
 } from "@/lib/function-routes";
 import type {
+  AnimationExportFormat,
+  AnimationExportTarget,
   AudioExtractFormat,
   AudioTrackEditMode,
   AudioTrackEditTarget,
@@ -24,6 +26,8 @@ import type {
   CropPadTarget,
   HealthResponse,
   MediaAsset,
+  MediaInspection,
+  MediaMetadata,
   NormalizeTargetPreset,
   NormalizeTargetProfile,
   PlaybackSpeedTarget,
@@ -54,6 +58,15 @@ type UploadResponse = {
 
 type JobResponse = {
   item: ProcessingJob;
+};
+
+type AssetMetadataResponse = {
+  item: {
+    assetId: string;
+    metadata: MediaInspection | null;
+    summary: MediaMetadata | null;
+  };
+  message?: string;
 };
 
 const statusHighlights = [
@@ -147,6 +160,23 @@ const compressionEncoderPresetOptions: Array<{
     value: "slow",
     label: "Slow",
     description: "Takes longer but can squeeze file size down more effectively.",
+  },
+];
+
+const animationFormatOptions: Array<{
+  value: AnimationExportFormat;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "gif",
+    label: "GIF",
+    description: "A widely supported looping preview that is easy to drop into chats and docs.",
+  },
+  {
+    value: "webp",
+    label: "Animated WebP",
+    description: "A lighter modern preview format that usually stays smaller than GIF.",
   },
 ];
 
@@ -380,6 +410,13 @@ const sessionStorageKeys = {
   compressVideoBitrate: "vfe:compress-video-bitrate",
   compressAudioBitrate: "vfe:compress-audio-bitrate",
   compressEncoderPreset: "vfe:compress-encoder-preset",
+  animationAssetId: "vfe:animation-asset-id",
+  animationFormat: "vfe:animation-format",
+  animationStartTime: "vfe:animation-start-time",
+  animationDuration: "vfe:animation-duration",
+  animationWidth: "vfe:animation-width",
+  animationFps: "vfe:animation-fps",
+  animationQuality: "vfe:animation-quality",
   extractAssetId: "vfe:extract-asset-id",
   extractTimeSeconds: "vfe:extract-time-seconds",
   extractFormat: "vfe:extract-format",
@@ -501,6 +538,57 @@ function formatAssetSummary(asset: MediaAsset) {
   ].filter((value): value is string => Boolean(value));
 
   return details.join(" | ");
+}
+
+function formatBitRate(bitsPerSecond: number | null | undefined) {
+  if (!bitsPerSecond || Number.isNaN(bitsPerSecond)) {
+    return "Unknown bitrate";
+  }
+
+  if (bitsPerSecond >= 1_000_000) {
+    return `${(bitsPerSecond / 1_000_000).toFixed(2).replace(/\.?0+$/, "")} Mbps`;
+  }
+
+  return `${Math.round(bitsPerSecond / 1000)} kbps`;
+}
+
+function formatFrameRateLabel(value: string | null | undefined) {
+  if (!value) {
+    return "Unknown frame rate";
+  }
+
+  const [numerator, denominator] = value.split("/");
+
+  if (numerator && denominator) {
+    const parsedNumerator = Number(numerator);
+    const parsedDenominator = Number(denominator);
+
+    if (
+      Number.isFinite(parsedNumerator) &&
+      Number.isFinite(parsedDenominator) &&
+      parsedDenominator > 0
+    ) {
+      return `${(parsedNumerator / parsedDenominator)
+        .toFixed(2)
+        .replace(/\.?0+$/, "")} fps`;
+    }
+  }
+
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return `${parsed.toFixed(2).replace(/\.?0+$/, "")} fps`;
+  }
+
+  return value;
+}
+
+function formatMetadataTimestamp(value: string | null | undefined) {
+  if (!value) {
+    return "Unknown";
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
 function formatStatusLabel(status: ProcessingJob["status"]) {
@@ -1066,6 +1154,136 @@ function formatConvertTargetSummary(target: ConvertImageTarget | null) {
           : "Keep original size",
     target.fit ? `Fit: ${target.fit}` : null,
     target.quality ? `Quality: ${target.quality}` : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return details.join(" | ");
+}
+
+function getSuggestedAnimationDuration(asset: MediaAsset | null | undefined) {
+  const duration = asset?.metadata?.durationSeconds;
+
+  if (typeof duration !== "number" || Number.isNaN(duration) || duration <= 0) {
+    return "3";
+  }
+
+  return String(Number(Math.min(3, Math.max(0.5, duration)).toFixed(2)));
+}
+
+function buildAnimationExportTargetPlan(input: {
+  asset: MediaAsset | null;
+  format: AnimationExportFormat;
+  startTime: string;
+  duration: string;
+  width: string;
+  fps: string;
+  quality: string;
+}) {
+  if (!input.asset) {
+    return {
+      target: null,
+      errorMessage: "Choose a video clip before exporting a GIF or animated WebP.",
+    };
+  }
+
+  const startTimeResult = parseRequiredNonNegativeNumber(input.startTime, "Start time");
+  const durationResult = parseRequiredNonNegativeNumber(input.duration, "Clip duration");
+  const widthResult = parseOptionalPositiveInteger(input.width, "Width");
+  const fpsResult = parseOptionalIntegerInRange(input.fps, {
+    min: 1,
+    max: 30,
+    label: "Frames per second",
+  });
+  const qualityResult = parseOptionalIntegerInRange(input.quality, {
+    min: 1,
+    max: 100,
+    label: "Quality",
+  });
+
+  const errorMessage =
+    startTimeResult.error ??
+    durationResult.error ??
+    widthResult.error ??
+    fpsResult.error ??
+    qualityResult.error ??
+    null;
+
+  if (errorMessage) {
+    return {
+      target: null,
+      errorMessage,
+    };
+  }
+
+  if ((durationResult.value ?? 0) <= 0) {
+    return {
+      target: null,
+      errorMessage: "Clip duration must be greater than zero.",
+    };
+  }
+
+  if ((durationResult.value ?? 0) > 15) {
+    return {
+      target: null,
+      errorMessage: "Clip duration must stay at or below 15 seconds.",
+    };
+  }
+
+  const sourceDuration = input.asset.metadata?.durationSeconds;
+
+  if (typeof sourceDuration !== "number") {
+    return {
+      target: null,
+      errorMessage: "The selected clip is missing duration metadata. Re-upload it before animation export.",
+    };
+  }
+
+  if ((startTimeResult.value ?? 0) > sourceDuration) {
+    return {
+      target: null,
+      errorMessage: "Start time cannot be greater than the source duration.",
+    };
+  }
+
+  if ((startTimeResult.value ?? 0) + (durationResult.value ?? 0) > sourceDuration) {
+    return {
+      target: null,
+      errorMessage: "The selected preview range extends past the end of the source clip.",
+    };
+  }
+
+  const target: AnimationExportTarget = {
+    format: input.format,
+    startTime: startTimeResult.value ?? 0,
+    durationSeconds: durationResult.value ?? 3,
+    fps: fpsResult.value ?? 12,
+  };
+
+  if (widthResult.value) {
+    target.width = widthResult.value;
+  }
+
+  if (input.format === "webp" && qualityResult.value) {
+    target.quality = qualityResult.value;
+  }
+
+  return {
+    target,
+    errorMessage: null,
+  };
+}
+
+function formatAnimationExportTargetSummary(target: AnimationExportTarget | null) {
+  if (!target) {
+    return "Target is unavailable.";
+  }
+
+  const details = [
+    target.format === "gif" ? "GIF" : "Animated WebP",
+    `${target.startTime.toFixed(2).replace(/\.?0+$/, "")}s start`,
+    `${target.durationSeconds.toFixed(2).replace(/\.?0+$/, "")}s long`,
+    target.width ? `${target.width}px wide` : "Keep source width",
+    target.fps ? `${target.fps} fps` : null,
+    target.quality ? `Quality ${target.quality}` : null,
   ].filter((value): value is string => Boolean(value));
 
   return details.join(" | ");
@@ -1924,6 +2142,8 @@ function getJobTypeLabel(type: ProcessingJob["type"]) {
       return "Trim job";
     case "compress-video":
       return "Compress video job";
+    case "export-animation":
+      return "Animation export job";
     case "extract-frame":
       return "Extract frame job";
     case "extract-audio":
@@ -1967,6 +2187,7 @@ function getAssetLibraryScope(
   if (
     activeView === "trim" ||
     activeView === "compress" ||
+    activeView === "animation-export" ||
     activeView === "extract-frame" ||
     activeView === "text-overlay" ||
     activeView === "transition-merge" ||
@@ -2195,6 +2416,13 @@ export function EditorDashboard({
   const [compressAudioBitrate, setCompressAudioBitrate] = useState("");
   const [compressEncoderPreset, setCompressEncoderPreset] =
     useState<VideoCompressionEncoderPreset>("medium");
+  const [animationAssetId, setAnimationAssetId] = useState("");
+  const [animationFormat, setAnimationFormat] = useState<AnimationExportFormat>("webp");
+  const [animationStartTime, setAnimationStartTime] = useState("0");
+  const [animationDuration, setAnimationDuration] = useState("3");
+  const [animationWidth, setAnimationWidth] = useState("320");
+  const [animationFps, setAnimationFps] = useState("12");
+  const [animationQuality, setAnimationQuality] = useState("82");
   const [extractAssetId, setExtractAssetId] = useState("");
   const [extractTimeSeconds, setExtractTimeSeconds] = useState("0");
   const [extractFormat, setExtractFormat] = useState<ConvertImageFormat>("jpeg");
@@ -2261,6 +2489,9 @@ export function EditorDashboard({
   const [convertHeight, setConvertHeight] = useState("");
   const [convertFit, setConvertFit] = useState<ConvertImageFit>("contain");
   const [convertBackground, setConvertBackground] = useState("#ffffff");
+  const [metadataInspectionAssetId, setMetadataInspectionAssetId] = useState("");
+  const [metadataInspection, setMetadataInspection] = useState<MediaInspection | null>(null);
+  const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false);
   const [feedback, setFeedback] = useState(
     "Upload files once, then open only the function page you need for the next step.",
   );
@@ -2292,6 +2523,17 @@ export function EditorDashboard({
     videoBitrateKbps: compressVideoBitrate,
     audioBitrateKbps: compressAudioBitrate,
     encoderPreset: compressEncoderPreset,
+  });
+  const selectedAnimationAsset =
+    videoAssets.find((asset) => asset.id === animationAssetId) ?? null;
+  const animationExportTargetPlan = buildAnimationExportTargetPlan({
+    asset: selectedAnimationAsset,
+    format: animationFormat,
+    startTime: animationStartTime,
+    duration: animationDuration,
+    width: animationWidth,
+    fps: animationFps,
+    quality: animationQuality,
   });
   const selectedExtractAsset =
     videoAssets.find((asset) => asset.id === extractAssetId) ?? null;
@@ -2412,6 +2654,8 @@ export function EditorDashboard({
   });
   const selectedConvertAsset =
     imageAssets.find((asset) => asset.id === convertAssetId) ?? null;
+  const selectedMetadataInspectionAsset =
+    assets.find((asset) => asset.id === metadataInspectionAssetId) ?? null;
   const currentViewMeta = editorViewMeta[activeView];
   const assetLibraryScope = getAssetLibraryScope(activeView, {
     assets,
@@ -2441,6 +2685,9 @@ export function EditorDashboard({
         setTrimAssetId("");
         setTrimEndTime("5");
         setCompressAssetId("");
+        setAnimationAssetId("");
+        setAnimationStartTime("0");
+        setAnimationDuration("3");
         setExtractAssetId("");
         setExtractAudioAssetId("");
         setAudioTrackAssetId("");
@@ -2457,6 +2704,9 @@ export function EditorDashboard({
         setCropPadWidth("");
         setCropPadHeight("");
         setConvertAssetId("");
+        setMetadataInspectionAssetId("");
+        setMetadataInspection(null);
+        setIsMetadataModalOpen(false);
         return;
       }
 
@@ -2476,6 +2726,17 @@ export function EditorDashboard({
 
       if (!hasSelectedCompressAsset) {
         setCompressAssetId(nextVideoAssets[0]?.id ?? "");
+      }
+
+      const hasSelectedAnimationAsset = nextVideoAssets.some(
+        (asset) => asset.id === animationAssetId,
+      );
+
+      if (!hasSelectedAnimationAsset) {
+        const nextAnimationAsset = nextVideoAssets[0];
+        setAnimationAssetId(nextAnimationAsset?.id ?? "");
+        setAnimationStartTime("0");
+        setAnimationDuration(getSuggestedAnimationDuration(nextAnimationAsset));
       }
 
       const hasSelectedExtractAsset = nextVideoAssets.some(
@@ -2604,6 +2865,15 @@ export function EditorDashboard({
             : "",
         );
       }
+
+      if (
+        metadataInspectionAssetId &&
+        !nextAssets.some((asset) => asset.id === metadataInspectionAssetId)
+      ) {
+        setMetadataInspectionAssetId("");
+        setMetadataInspection(null);
+        setIsMetadataModalOpen(false);
+      }
     });
   }
 
@@ -2674,6 +2944,22 @@ export function EditorDashboard({
         "medium",
       ) as VideoCompressionEncoderPreset,
     );
+    setAnimationAssetId(readSessionString(sessionStorageKeys.animationAssetId, ""));
+    setAnimationFormat(
+      readSessionString(
+        sessionStorageKeys.animationFormat,
+        "webp",
+      ) as AnimationExportFormat,
+    );
+    setAnimationStartTime(
+      readSessionString(sessionStorageKeys.animationStartTime, "0"),
+    );
+    setAnimationDuration(
+      readSessionString(sessionStorageKeys.animationDuration, "3"),
+    );
+    setAnimationWidth(readSessionString(sessionStorageKeys.animationWidth, "320"));
+    setAnimationFps(readSessionString(sessionStorageKeys.animationFps, "12"));
+    setAnimationQuality(readSessionString(sessionStorageKeys.animationQuality, "82"));
     setExtractAssetId(readSessionString(sessionStorageKeys.extractAssetId, ""));
     setExtractTimeSeconds(readSessionString(sessionStorageKeys.extractTimeSeconds, "0"));
     setExtractFormat(
@@ -3025,6 +3311,68 @@ export function EditorDashboard({
       compressEncoderPreset,
     );
   }, [hasRestoredSession, compressEncoderPreset]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(sessionStorageKeys.animationAssetId, animationAssetId);
+  }, [animationAssetId, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(sessionStorageKeys.animationFormat, animationFormat);
+  }, [animationFormat, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.animationStartTime,
+      animationStartTime,
+    );
+  }, [animationStartTime, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.animationDuration,
+      animationDuration,
+    );
+  }, [animationDuration, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(sessionStorageKeys.animationWidth, animationWidth);
+  }, [animationWidth, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(sessionStorageKeys.animationFps, animationFps);
+  }, [animationFps, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(sessionStorageKeys.animationQuality, animationQuality);
+  }, [animationQuality, hasRestoredSession]);
 
   useEffect(() => {
     if (!hasRestoredSession) {
@@ -3672,6 +4020,47 @@ export function EditorDashboard({
     }
   }
 
+  async function handleAnimationExportJob() {
+    if (!animationAssetId) {
+      setErrorMessage("Choose one video clip before exporting a GIF or animated WebP.");
+      return;
+    }
+
+    if (!animationExportTargetPlan.target) {
+      setErrorMessage(
+        animationExportTargetPlan.errorMessage ??
+          "Animation export target could not be prepared.",
+      );
+      return;
+    }
+
+    setBusyAction("animation-export");
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Preparing your animation export request.");
+      const response = await fetchJson<JobResponse>("/api/v1/jobs/export-animation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          assetId: animationAssetId,
+          target: animationExportTargetPlan.target,
+        }),
+      });
+
+      await loadJobs();
+      setFeedback(`Animation export job ${response.item.id.slice(0, 8)} has been queued.`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Animation export job failed.",
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   async function handleExtractFrameJob() {
     if (!extractAssetId) {
       setErrorMessage("Choose one video clip before extracting a frame.");
@@ -4150,6 +4539,54 @@ export function EditorDashboard({
     }
   }
 
+  async function handleOpenMetadataInspection(asset: MediaAsset) {
+    setMetadataInspectionAssetId(asset.id);
+    setMetadataInspection(null);
+    setIsMetadataModalOpen(true);
+    setBusyAction(`metadata:${asset.id}`);
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Loading technical file details.");
+      const response = await fetchJson<AssetMetadataResponse>(
+        `/api/v1/assets/${asset.id}/metadata`,
+      );
+      setMetadataInspection(response.item.metadata);
+      setFeedback(`Technical details for ${asset.originalName} are ready.`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Technical file details could not be loaded.",
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleRefreshMetadataInspection(asset: MediaAsset) {
+    setBusyAction(`metadata-refresh:${asset.id}`);
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Refreshing technical file details.");
+      const response = await fetchJson<AssetMetadataResponse>(
+        `/api/v1/assets/${asset.id}/metadata/refresh`,
+        {
+          method: "POST",
+        },
+      );
+      setMetadataInspectionAssetId(asset.id);
+      setMetadataInspection(response.item.metadata);
+      await loadAssets();
+      setFeedback(response.message ?? `Technical details for ${asset.originalName} were refreshed.`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Technical file details could not be refreshed.",
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   async function handleDeleteAsset(asset: MediaAsset) {
     const confirmed = window.confirm(
       `Delete "${asset.originalName}" from ${asset.storageDriver ?? "local"} storage?`,
@@ -4493,6 +4930,196 @@ export function EditorDashboard({
             className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busyAction === "compress" ? "Queueing compression..." : "Queue compress job"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  function renderAnimationExportPanel() {
+    const selectedAnimationFormat = animationFormatOptions.find(
+      (option) => option.value === animationFormat,
+    );
+
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Animation export function"
+          title="Turn one short video moment into a GIF or animated WebP"
+          badge="Function"
+        />
+
+        <div className="mt-6 space-y-4">
+          {videoAssets.length > 0 ? (
+            <div className="grid max-h-[16rem] gap-3 overflow-y-auto pr-1">
+              {videoAssets.map((asset) => (
+                <SelectableAssetCard
+                  key={asset.id}
+                  asset={asset}
+                  selected={animationAssetId === asset.id}
+                  inputType="radio"
+                  inputName="animation-asset"
+                  onSelect={() => {
+                    setAnimationAssetId(asset.id);
+                    setAnimationStartTime("0");
+                    setAnimationDuration(getSuggestedAnimationDuration(asset));
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+              Upload a video clip to enable GIF or animated WebP export.
+            </div>
+          )}
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Output format
+              <select
+                value={animationFormat}
+                onChange={(event) => {
+                  setAnimationFormat(event.target.value as AnimationExportFormat);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {animationFormatOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="rounded-[1.5rem] bg-white/78 px-4 py-4 text-sm leading-6 text-muted">
+              {selectedAnimationFormat?.description ??
+                "Create a short looping preview clip from one video source."}
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Start time (seconds)
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={animationStartTime}
+                onChange={(event) => {
+                  setAnimationStartTime(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Clip duration (seconds)
+              <input
+                type="number"
+                min="0.1"
+                max="15"
+                step="0.1"
+                value={animationDuration}
+                onChange={(event) => {
+                  setAnimationDuration(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Width (optional)
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={animationWidth}
+                onChange={(event) => {
+                  setAnimationWidth(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Frames per second
+              <input
+                type="number"
+                min="1"
+                max="30"
+                step="1"
+                value={animationFps}
+                onChange={(event) => {
+                  setAnimationFps(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+
+            {animationFormat === "webp" ? (
+              <label className="grid gap-2 text-sm font-medium text-foreground">
+                Quality (1-100)
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  step="1"
+                  value={animationQuality}
+                  onChange={(event) => {
+                    setAnimationQuality(event.target.value);
+                  }}
+                  className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+                />
+              </label>
+            ) : (
+              <div className="rounded-[1.5rem] bg-white/78 px-4 py-4 text-sm leading-6 text-muted">
+                GIF export uses palette optimization automatically, so there is no separate quality control here.
+              </div>
+            )}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Source</p>
+              <p className="mt-2 text-sm font-semibold">
+                {selectedAnimationAsset?.originalName ?? "Choose a video"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Target summary</p>
+              <p className="mt-2 text-sm font-semibold">
+                {formatAnimationExportTargetSummary(animationExportTargetPlan.target)}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-[1.5rem] bg-white/78 px-4 py-4 text-sm leading-6 text-muted">
+            Keep previews short and compact. The first version caps exports at 15 seconds so queue time and storage stay manageable on the current runtime.
+          </div>
+
+          {animationExportTargetPlan.errorMessage ? (
+            <p className="rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
+              {animationExportTargetPlan.errorMessage}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              void handleAnimationExportJob();
+            }}
+            disabled={
+              busyAction === "animation-export" ||
+              !animationAssetId ||
+              !animationExportTargetPlan.target
+            }
+            className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busyAction === "animation-export"
+              ? "Queueing animation export..."
+              : "Queue GIF / WebP export job"}
           </button>
         </div>
       </section>
@@ -6452,6 +7079,235 @@ export function EditorDashboard({
     );
   }
 
+  function renderMetadataInspectionModal() {
+    if (!isMetadataModalOpen || !selectedMetadataInspectionAsset) {
+      return null;
+    }
+
+    const isLoadingMetadata =
+      busyAction === `metadata:${selectedMetadataInspectionAsset.id}` ||
+      busyAction === `metadata-refresh:${selectedMetadataInspectionAsset.id}`;
+    const inspectionStreams = metadataInspection?.streams ?? [];
+    const resolvedDuration =
+      metadataInspection?.durationSeconds ??
+      selectedMetadataInspectionAsset.metadata?.durationSeconds ??
+      null;
+    const resolvedSize =
+      metadataInspection?.sizeBytes ?? selectedMetadataInspectionAsset.sizeBytes ?? null;
+    const resolvedBitRate =
+      metadataInspection?.bitRate ?? selectedMetadataInspectionAsset.metadata?.bitRate ?? null;
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4 py-6">
+        <div className="absolute inset-0" onClick={() => setIsMetadataModalOpen(false)} />
+
+        <section className="relative z-10 flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-[2rem] border border-panel-border bg-[#f8f5ef] shadow-[0_40px_120px_rgba(0,0,0,0.28)]">
+          <div className="flex items-start justify-between gap-4 border-b border-panel-border px-6 py-5 sm:px-8">
+            <div>
+              <p className="font-display text-sm font-semibold uppercase tracking-[0.24em] text-muted">
+                Metadata inspection
+              </p>
+              <h3 className="mt-2 text-2xl font-semibold text-foreground">
+                {selectedMetadataInspectionAsset.originalName}
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-muted">
+                Review container, stream, codec, and timing details for this file.
+              </p>
+            </div>
+
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  void handleRefreshMetadataInspection(selectedMetadataInspectionAsset);
+                }}
+                disabled={busyAction === `metadata-refresh:${selectedMetadataInspectionAsset.id}`}
+                className="rounded-full border border-panel-border bg-white px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-[#f1eadf] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {busyAction === `metadata-refresh:${selectedMetadataInspectionAsset.id}`
+                  ? "Refreshing..."
+                  : "Refresh metadata"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMetadataModalOpen(false);
+                }}
+                className="rounded-full bg-foreground px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-y-auto px-6 py-6 sm:px-8">
+            {metadataInspection ? (
+              <div className="space-y-6">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-[1.25rem] bg-white px-4 py-4 shadow-sm">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Container</p>
+                    <p className="mt-2 text-sm font-semibold">
+                      {metadataInspection.formatLongName ??
+                        metadataInspection.formatName ??
+                        selectedMetadataInspectionAsset.mimeType}
+                    </p>
+                  </div>
+                  <div className="rounded-[1.25rem] bg-white px-4 py-4 shadow-sm">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Duration</p>
+                    <p className="mt-2 text-sm font-semibold">{formatDuration(resolvedDuration)}</p>
+                  </div>
+                  <div className="rounded-[1.25rem] bg-white px-4 py-4 shadow-sm">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Size</p>
+                    <p className="mt-2 text-sm font-semibold">{formatBytes(resolvedSize)}</p>
+                  </div>
+                  <div className="rounded-[1.25rem] bg-white px-4 py-4 shadow-sm">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Bitrate</p>
+                    <p className="mt-2 text-sm font-semibold">{formatBitRate(resolvedBitRate)}</p>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-[1.25rem] bg-white px-4 py-4 shadow-sm">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Streams</p>
+                    <p className="mt-2 text-sm font-semibold">{metadataInspection.streamCount}</p>
+                  </div>
+                  <div className="rounded-[1.25rem] bg-white px-4 py-4 shadow-sm">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Video streams</p>
+                    <p className="mt-2 text-sm font-semibold">
+                      {metadataInspection.videoStreamCount}
+                    </p>
+                  </div>
+                  <div className="rounded-[1.25rem] bg-white px-4 py-4 shadow-sm">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Audio streams</p>
+                    <p className="mt-2 text-sm font-semibold">
+                      {metadataInspection.audioStreamCount}
+                    </p>
+                  </div>
+                  <div className="rounded-[1.25rem] bg-white px-4 py-4 shadow-sm">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Inspected at</p>
+                    <p className="mt-2 text-sm font-semibold">
+                      {formatMetadataTimestamp(metadataInspection.inspectedAt)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-[1.5rem] border border-panel-border bg-white/80 p-4">
+                  <p className="text-xs uppercase tracking-[0.16em] text-muted">Summary</p>
+                  <p className="mt-2 text-sm leading-6 text-foreground">
+                    {formatAssetSummary(selectedMetadataInspectionAsset) || "Summary is unavailable."}
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="font-display text-sm font-semibold uppercase tracking-[0.22em] text-muted">
+                      Stream details
+                    </p>
+                    <h4 className="mt-2 text-xl font-semibold text-foreground">
+                      Video and audio streams
+                    </h4>
+                  </div>
+
+                  {inspectionStreams.length > 0 ? (
+                    <div className="grid gap-4">
+                      {inspectionStreams.map((stream) => (
+                        <article
+                          key={`${stream.codecType ?? "unknown"}-${stream.index}`}
+                          className="rounded-[1.5rem] border border-panel-border bg-white px-5 py-4 shadow-sm"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-base font-semibold text-foreground">
+                              Stream {stream.index}{" "}
+                              {stream.codecType
+                                ? `· ${stream.codecType.charAt(0).toUpperCase()}${stream.codecType.slice(1)}`
+                                : ""}
+                            </p>
+                            {stream.codecName ? (
+                              <span className="rounded-full bg-[#111111] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
+                                {stream.codecName}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+                              <p className="text-xs uppercase tracking-[0.16em] text-muted">Codec</p>
+                              <p className="mt-2 text-sm font-semibold">
+                                {stream.codecLongName ?? stream.codecName ?? "Unknown"}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+                              <p className="text-xs uppercase tracking-[0.16em] text-muted">Dimensions / audio</p>
+                              <p className="mt-2 text-sm font-semibold">
+                                {stream.width && stream.height
+                                  ? `${stream.width}x${stream.height}`
+                                  : stream.audioSampleRate
+                                    ? `${stream.audioSampleRate} Hz${stream.audioChannels ? ` · ${stream.audioChannels} ch` : ""}`
+                                    : "Unknown"}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+                              <p className="text-xs uppercase tracking-[0.16em] text-muted">Bitrate</p>
+                              <p className="mt-2 text-sm font-semibold">
+                                {formatBitRate(stream.bitRate)}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+                              <p className="text-xs uppercase tracking-[0.16em] text-muted">Frame rate</p>
+                              <p className="mt-2 text-sm font-semibold">
+                                {formatFrameRateLabel(
+                                  stream.averageFrameRate ?? stream.frameRate,
+                                )}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+                              <p className="text-xs uppercase tracking-[0.16em] text-muted">Aspect ratio</p>
+                              <p className="mt-2 text-sm font-semibold">
+                                {stream.displayAspectRatio ??
+                                  stream.sampleAspectRatio ??
+                                  "Unknown"}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+                              <p className="text-xs uppercase tracking-[0.16em] text-muted">Rotation / layout</p>
+                              <p className="mt-2 text-sm font-semibold">
+                                {typeof stream.rotationDegrees === "number"
+                                  ? `${stream.rotationDegrees}°`
+                                  : stream.audioChannelLayout ?? "Unknown"}
+                              </p>
+                            </div>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+                      No stream details were returned for this file.
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : isLoadingMetadata ? (
+              <div className="flex min-h-[16rem] items-center justify-center">
+                <div className="flex items-center gap-3 rounded-full bg-white px-5 py-3 text-sm font-semibold text-foreground shadow-sm">
+                  <span
+                    aria-hidden="true"
+                    className="h-4 w-4 animate-spin rounded-full border-2 border-[#111111]/20 border-t-[#111111]"
+                  />
+                  Loading technical details...
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+                Technical details are not available for this file yet.
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   function renderJobsPanel() {
     return (
       <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
@@ -6536,6 +7392,10 @@ export function EditorDashboard({
       return renderCompressPanel();
     }
 
+    if (activeView === "animation-export") {
+      return renderAnimationExportPanel();
+    }
+
     if (activeView === "extract-frame") {
       return renderExtractFramePanel();
     }
@@ -6588,7 +7448,8 @@ export function EditorDashboard({
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-5 py-6 sm:px-8 lg:px-10">
+    <>
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-5 py-6 sm:px-8 lg:px-10">
       <section className="glass-panel overflow-hidden rounded-[2rem]">
         <div className="grid gap-6 px-6 py-7 sm:px-8 lg:grid-cols-[1.2fr_0.9fr] lg:px-10">
           <div className="space-y-6">
@@ -6865,6 +7726,16 @@ export function EditorDashboard({
                   </div>
 
                   <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-stretch">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleOpenMetadataInspection(asset);
+                      }}
+                      disabled={busyAction === `metadata:${asset.id}`}
+                      className="rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {busyAction === `metadata:${asset.id}` ? "Loading details..." : "Details"}
+                    </button>
                     <a
                       href={toApiUrl(asset.downloadUrl)}
                       className="rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground"
@@ -6908,6 +7779,9 @@ export function EditorDashboard({
           )}
         </div>
       </section>
-    </main>
+      </main>
+
+      {renderMetadataInspectionModal()}
+    </>
   );
 }

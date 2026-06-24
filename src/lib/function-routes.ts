@@ -2,6 +2,7 @@ export type EditorView =
   | "workspace"
   | "trim"
   | "compress"
+  | "animation-export"
   | "extract-frame"
   | "extract-audio"
   | "audio-track"
@@ -37,6 +38,13 @@ export const functionRouteOptions: Array<{
     label: "Compress video",
     shortLabel: "Compress",
     description: "Reduce file size or transcode one video with simple presets or advanced quality controls.",
+  },
+  {
+    view: "animation-export",
+    href: "/functions/animation-export",
+    label: "GIF / WebP export",
+    shortLabel: "Animate",
+    description: "Turn one short video moment into a lightweight GIF or animated WebP clip.",
   },
   {
     view: "extract-frame",
@@ -142,6 +150,12 @@ export const editorViewMeta: Record<
     eyebrow: "Function",
     description:
       "Shrink one video or transcode it to a cleaner MP4 export with preset or advanced quality controls.",
+  },
+  "animation-export": {
+    label: "Animation export",
+    eyebrow: "Function",
+    description:
+      "Clip one short moment from a video and export it as a GIF or animated WebP preview.",
   },
   "extract-frame": {
     label: "Extract frame",
