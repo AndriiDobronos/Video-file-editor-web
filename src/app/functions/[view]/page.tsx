@@ -10,6 +10,7 @@ export async function generateStaticParams() {
     { view: "extract-audio" },
     { view: "audio-track" },
     { view: "change-speed" },
+    { view: "audio-volume" },
     { view: "text-overlay" },
     { view: "merge" },
     { view: "normalize" },

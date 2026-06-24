@@ -6,6 +6,7 @@ export type EditorView =
   | "extract-audio"
   | "audio-track"
   | "change-speed"
+  | "audio-volume"
   | "text-overlay"
   | "merge"
   | "normalize"
@@ -63,6 +64,13 @@ export const functionRouteOptions: Array<{
     label: "Speed up / slow down",
     shortLabel: "Speed",
     description: "Adjust playback speed for a video or audio file while keeping the workflow export-ready.",
+  },
+  {
+    view: "audio-volume",
+    href: "/functions/audio-volume",
+    label: "Adjust audio volume",
+    shortLabel: "Volume",
+    description: "Raise, lower, or mute the soundtrack of a video or audio file with optional range control.",
   },
   {
     view: "text-overlay",
@@ -150,6 +158,12 @@ export const editorViewMeta: Record<
     eyebrow: "Function",
     description:
       "Speed up or slow down a video or audio file while preparing a new export.",
+  },
+  "audio-volume": {
+    label: "Audio volume",
+    eyebrow: "Function",
+    description:
+      "Raise, lower, or mute the soundtrack of one video or audio file with optional clipping protection and custom timing.",
   },
   "text-overlay": {
     label: "Text overlay",

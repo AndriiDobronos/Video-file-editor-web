@@ -12,6 +12,7 @@ import type {
   AudioExtractFormat,
   AudioTrackEditMode,
   AudioTrackEditTarget,
+  AudioVolumeTarget,
   ExtractFrameTarget,
   AudioExtractTarget,
   ConvertImageFit,
@@ -230,6 +231,15 @@ const audioTrackModeOptions: Array<{
 ];
 
 const speedPresetOptions = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+const audioVolumeQuickOptions = [
+  { label: "Mute", value: "mute" as const },
+  { label: "-12 dB", value: -12 },
+  { label: "-6 dB", value: -6 },
+  { label: "-3 dB", value: -3 },
+  { label: "0 dB", value: 0 },
+  { label: "+3 dB", value: 3 },
+  { label: "+6 dB", value: 6 },
+] as const;
 
 const cropPadModeOptions: Array<{
   value: CropPadMode;
@@ -348,6 +358,13 @@ const sessionStorageKeys = {
   audioTrackLoopReplacement: "vfe:audio-track-loop-replacement",
   changeSpeedAssetId: "vfe:change-speed-asset-id",
   changeSpeedRate: "vfe:change-speed-rate",
+  audioVolumeAssetId: "vfe:audio-volume-asset-id",
+  audioVolumeMute: "vfe:audio-volume-mute",
+  audioVolumeGainDb: "vfe:audio-volume-gain-db",
+  audioVolumeCustomRange: "vfe:audio-volume-custom-range",
+  audioVolumeStartTime: "vfe:audio-volume-start-time",
+  audioVolumeEndTime: "vfe:audio-volume-end-time",
+  audioVolumePreventClipping: "vfe:audio-volume-prevent-clipping",
   textOverlayAssetId: "vfe:text-overlay-asset-id",
   textOverlayText: "vfe:text-overlay-text",
   textOverlayStartTime: "vfe:text-overlay-start-time",
@@ -1253,6 +1270,160 @@ function formatPlaybackSpeedTargetSummary(
   return `${target.rate.toFixed(2)}x | ${outputHint}`;
 }
 
+function buildAudioVolumeTargetPlan(input: {
+  asset: MediaAsset | null;
+  mute: boolean;
+  gainDb: string;
+  useCustomRange: boolean;
+  startTime: string;
+  endTime: string;
+  preventClipping: boolean;
+}) {
+  if (!input.asset) {
+    return {
+      target: null,
+      errorMessage: "Choose one video or audio file before adjusting audio volume.",
+    };
+  }
+
+  if (!hasAudioStream(input.asset)) {
+    return {
+      target: null,
+      errorMessage: "Audio volume currently requires a file that already contains audio.",
+    };
+  }
+
+  let resolvedGainDb: number | undefined;
+
+  if (!input.mute) {
+    if (!input.gainDb.trim()) {
+      return {
+        target: null,
+        errorMessage: "Enter a gain value in dB or choose mute.",
+      };
+    }
+
+    const parsedGainDb = Number(input.gainDb);
+
+    if (!Number.isFinite(parsedGainDb) || parsedGainDb < -30 || parsedGainDb > 20) {
+      return {
+        target: null,
+        errorMessage: "Audio gain must stay between -30 dB and +20 dB.",
+      };
+    }
+
+    resolvedGainDb = parsedGainDb;
+  }
+
+  const startTimeResult = input.useCustomRange
+    ? parseRequiredNonNegativeNumber(input.startTime, "Start time")
+    : { value: undefined, error: null };
+  const endTimeResult = input.useCustomRange
+    ? parseRequiredNonNegativeNumber(input.endTime, "End time")
+    : { value: undefined, error: null };
+  const errorMessage = startTimeResult.error ?? endTimeResult.error ?? null;
+
+  if (errorMessage) {
+    return {
+      target: null,
+      errorMessage,
+    };
+  }
+
+  if (
+    input.useCustomRange &&
+    typeof startTimeResult.value === "number" &&
+    typeof endTimeResult.value === "number" &&
+    endTimeResult.value <= startTimeResult.value
+  ) {
+    return {
+      target: null,
+      errorMessage: "End time must be greater than the start time.",
+    };
+  }
+
+  const duration = input.asset.metadata?.durationSeconds;
+
+  if (
+    input.useCustomRange &&
+    typeof duration === "number" &&
+    typeof startTimeResult.value === "number" &&
+    startTimeResult.value > duration
+  ) {
+    return {
+      target: null,
+      errorMessage: "Start time cannot be greater than the source duration.",
+    };
+  }
+
+  if (
+    input.useCustomRange &&
+    typeof duration === "number" &&
+    typeof endTimeResult.value === "number" &&
+    endTimeResult.value > duration
+  ) {
+    return {
+      target: null,
+      errorMessage: "End time cannot be greater than the source duration.",
+    };
+  }
+
+  const target: AudioVolumeTarget = {};
+
+  if (input.mute) {
+    target.mute = true;
+  } else {
+    target.gainDb = resolvedGainDb;
+  }
+
+  if (input.useCustomRange) {
+    target.startTime = startTimeResult.value;
+    target.endTime = endTimeResult.value;
+  }
+
+  if (input.preventClipping) {
+    target.preventClipping = true;
+  }
+
+  return {
+    target,
+    errorMessage: null,
+  };
+}
+
+function formatAudioVolumeTargetSummary(
+  asset: MediaAsset | null,
+  target: AudioVolumeTarget | null,
+) {
+  if (!target) {
+    return "Target is unavailable.";
+  }
+
+  const gainLabel = target.mute
+    ? "Mute"
+    : `${(target.gainDb ?? 0) > 0 ? "+" : ""}${(target.gainDb ?? 0)
+        .toFixed(2)
+        .replace(/\.?0+$/, "")} dB`;
+  const rangeLabel =
+    typeof target.startTime === "number" && typeof target.endTime === "number"
+      ? `${target.startTime.toFixed(2)}s to ${target.endTime.toFixed(2)}s`
+      : "Full media";
+  const outputHint = asset
+    ? isVideoAsset(asset)
+      ? "MP4 video export"
+      : "Audio export"
+    : "Output unavailable";
+
+  return [
+    gainLabel,
+    rangeLabel,
+    target.preventClipping ? "Clipping protection on" : null,
+    outputHint,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" | ");
+}
+
 function buildTextOverlayTargetPlan(input: {
   asset: MediaAsset | null;
   text: string;
@@ -1569,6 +1740,8 @@ function getJobTypeLabel(type: ProcessingJob["type"]) {
       return "Audio track job";
     case "change-speed":
       return "Change speed job";
+    case "audio-volume":
+      return "Audio volume job";
     case "overlay-text":
       return "Text overlay job";
     case "merge":
@@ -1594,6 +1767,7 @@ function getAssetLibraryScope(
     videoWithAudioAssets: MediaAsset[];
     audioTrackAssets: MediaAsset[];
     timedMediaAssets: MediaAsset[];
+    audioCapableAssets: MediaAsset[];
   },
 ) {
   if (
@@ -1636,6 +1810,15 @@ function getAssetLibraryScope(
       description: "Only video clips and audio files stay visible here because speed changes apply to time-based media only.",
       items: collections.timedMediaAssets,
       emptyMessage: "Upload a video clip or audio file to populate this page.",
+    };
+  }
+
+  if (activeView === "audio-volume") {
+    return {
+      countLabel: "Audio-ready media",
+      description: "Only files that already contain an audio stream stay visible here because volume changes work on sound, not silent media.",
+      items: collections.audioCapableAssets,
+      emptyMessage: "Upload a video or audio file that contains sound to populate this page.",
     };
   }
 
@@ -1836,6 +2019,13 @@ export function EditorDashboard({
     useState(true);
   const [changeSpeedAssetId, setChangeSpeedAssetId] = useState("");
   const [changeSpeedRate, setChangeSpeedRate] = useState("1");
+  const [audioVolumeAssetId, setAudioVolumeAssetId] = useState("");
+  const [audioVolumeMute, setAudioVolumeMute] = useState(false);
+  const [audioVolumeGainDb, setAudioVolumeGainDb] = useState("0");
+  const [audioVolumeUseCustomRange, setAudioVolumeUseCustomRange] = useState(false);
+  const [audioVolumeStartTime, setAudioVolumeStartTime] = useState("");
+  const [audioVolumeEndTime, setAudioVolumeEndTime] = useState("");
+  const [audioVolumePreventClipping, setAudioVolumePreventClipping] = useState(true);
   const [textOverlayAssetId, setTextOverlayAssetId] = useState("");
   const [textOverlayText, setTextOverlayText] = useState("Sample caption");
   const [textOverlayStartTime, setTextOverlayStartTime] = useState("");
@@ -1885,6 +2075,7 @@ export function EditorDashboard({
   const videoWithAudioAssets = videoAssets.filter(hasAudioStream);
   const audioOnlyAssets = assets.filter(isAudioOnlyAsset);
   const audioSourceAssets = assets.filter(hasAudioStream);
+  const audioCapableAssets = assets.filter(hasAudioStream);
   const audioTrackAssets = mergeUniqueAssets(videoAssets, audioSourceAssets);
   const timedMediaAssets = assets.filter(isTimedMediaAsset);
   const imageAssets = assets.filter(isImageAsset);
@@ -1932,6 +2123,17 @@ export function EditorDashboard({
   const changeSpeedTargetPlan = buildPlaybackSpeedTargetPlan({
     asset: selectedChangeSpeedAsset,
     rate: changeSpeedRate,
+  });
+  const selectedAudioVolumeAsset =
+    audioCapableAssets.find((asset) => asset.id === audioVolumeAssetId) ?? null;
+  const audioVolumeTargetPlan = buildAudioVolumeTargetPlan({
+    asset: selectedAudioVolumeAsset,
+    mute: audioVolumeMute,
+    gainDb: audioVolumeGainDb,
+    useCustomRange: audioVolumeUseCustomRange,
+    startTime: audioVolumeStartTime,
+    endTime: audioVolumeEndTime,
+    preventClipping: audioVolumePreventClipping,
   });
   const selectedTextOverlayAsset =
     videoAssets.find((asset) => asset.id === textOverlayAssetId) ?? null;
@@ -1995,6 +2197,7 @@ export function EditorDashboard({
     videoWithAudioAssets,
     audioTrackAssets,
     timedMediaAssets,
+    audioCapableAssets,
   });
   const assetLibraryAssets = assetLibraryScope.items;
 
@@ -2005,6 +2208,7 @@ export function EditorDashboard({
       const nextVideoAssets = nextAssets.filter(isVideoAsset);
       const nextVideoWithAudioAssets = nextVideoAssets.filter(hasAudioStream);
       const nextAudioSourceAssets = nextAssets.filter(hasAudioStream);
+      const nextAudioCapableAssets = nextAssets.filter(hasAudioStream);
       const nextTimedMediaAssets = nextAssets.filter(isTimedMediaAsset);
       const nextCropPadAssets = nextAssets.filter(isCropPadEligibleAsset);
       const nextImageAssets = nextAssets.filter(isImageAsset);
@@ -2018,6 +2222,9 @@ export function EditorDashboard({
         setAudioTrackAssetId("");
         setAudioTrackReplacementAssetId("");
         setChangeSpeedAssetId("");
+        setAudioVolumeAssetId("");
+        setAudioVolumeStartTime("");
+        setAudioVolumeEndTime("");
         setTextOverlayAssetId("");
         setMergeAssetIds([]);
         setCropPadAssetId("");
@@ -2095,6 +2302,14 @@ export function EditorDashboard({
 
       if (!hasSelectedChangeSpeedAsset) {
         setChangeSpeedAssetId(nextTimedMediaAssets[0]?.id ?? "");
+      }
+
+      const hasSelectedAudioVolumeAsset = nextAudioCapableAssets.some(
+        (asset) => asset.id === audioVolumeAssetId,
+      );
+
+      if (!hasSelectedAudioVolumeAsset) {
+        setAudioVolumeAssetId(nextAudioCapableAssets[0]?.id ?? "");
       }
 
       const hasSelectedTextOverlayAsset = nextVideoAssets.some(
@@ -2256,6 +2471,27 @@ export function EditorDashboard({
       readSessionString(sessionStorageKeys.changeSpeedAssetId, ""),
     );
     setChangeSpeedRate(readSessionString(sessionStorageKeys.changeSpeedRate, "1"));
+    setAudioVolumeAssetId(
+      readSessionString(sessionStorageKeys.audioVolumeAssetId, ""),
+    );
+    setAudioVolumeMute(
+      readSessionString(sessionStorageKeys.audioVolumeMute, "false") === "true",
+    );
+    setAudioVolumeGainDb(
+      readSessionString(sessionStorageKeys.audioVolumeGainDb, "0"),
+    );
+    setAudioVolumeUseCustomRange(
+      readSessionString(sessionStorageKeys.audioVolumeCustomRange, "false") === "true",
+    );
+    setAudioVolumeStartTime(
+      readSessionString(sessionStorageKeys.audioVolumeStartTime, ""),
+    );
+    setAudioVolumeEndTime(
+      readSessionString(sessionStorageKeys.audioVolumeEndTime, ""),
+    );
+    setAudioVolumePreventClipping(
+      readSessionString(sessionStorageKeys.audioVolumePreventClipping, "true") !== "false",
+    );
     setTextOverlayAssetId(
       readSessionString(sessionStorageKeys.textOverlayAssetId, ""),
     );
@@ -2672,6 +2908,83 @@ export function EditorDashboard({
       changeSpeedRate,
     );
   }, [changeSpeedRate, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.audioVolumeAssetId,
+      audioVolumeAssetId,
+    );
+  }, [audioVolumeAssetId, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.audioVolumeMute,
+      String(audioVolumeMute),
+    );
+  }, [audioVolumeMute, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.audioVolumeGainDb,
+      audioVolumeGainDb,
+    );
+  }, [audioVolumeGainDb, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.audioVolumeCustomRange,
+      String(audioVolumeUseCustomRange),
+    );
+  }, [audioVolumeUseCustomRange, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.audioVolumeStartTime,
+      audioVolumeStartTime,
+    );
+  }, [audioVolumeStartTime, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.audioVolumeEndTime,
+      audioVolumeEndTime,
+    );
+  }, [audioVolumeEndTime, hasRestoredSession]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.audioVolumePreventClipping,
+      String(audioVolumePreventClipping),
+    );
+  }, [audioVolumePreventClipping, hasRestoredSession]);
 
   useEffect(() => {
     if (!hasRestoredSession) {
@@ -3183,6 +3496,45 @@ export function EditorDashboard({
       setFeedback(`Speed change job ${response.item.id.slice(0, 8)} has been queued.`);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Speed change job failed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleAudioVolumeJob() {
+    if (!audioVolumeAssetId) {
+      setErrorMessage("Choose one video or audio file before adjusting audio volume.");
+      return;
+    }
+
+    if (!audioVolumeTargetPlan.target) {
+      setErrorMessage(
+        audioVolumeTargetPlan.errorMessage ??
+          "Audio volume target could not be prepared.",
+      );
+      return;
+    }
+
+    setBusyAction("audio-volume");
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Preparing your audio volume request.");
+      const response = await fetchJson<JobResponse>("/api/v1/jobs/audio-volume", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          assetId: audioVolumeAssetId,
+          target: audioVolumeTargetPlan.target,
+        }),
+      });
+
+      await loadJobs();
+      setFeedback(`Audio volume job ${response.item.id.slice(0, 8)} has been queued.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Audio volume job failed.");
     } finally {
       setBusyAction(null);
     }
@@ -4365,6 +4717,259 @@ export function EditorDashboard({
     );
   }
 
+  function renderAudioVolumePanel() {
+    const currentGainValue = Number(audioVolumeGainDb || "0");
+
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Audio volume function"
+          title="Raise, lower, or mute the soundtrack"
+          badge="Function"
+        />
+
+        <div className="mt-6 space-y-4">
+          {audioCapableAssets.length > 0 ? (
+            <div className="grid max-h-[16rem] gap-3 overflow-y-auto pr-1">
+              {audioCapableAssets.map((asset) => (
+                <SelectableAssetCard
+                  key={asset.id}
+                  asset={asset}
+                  selected={audioVolumeAssetId === asset.id}
+                  inputType="radio"
+                  inputName="audio-volume-asset"
+                  onSelect={() => {
+                    setAudioVolumeAssetId(asset.id);
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+              Upload a video or audio file with sound to enable audio volume adjustments.
+            </div>
+          )}
+
+          <div className="rounded-[1.5rem] bg-white/78 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Volume gain</p>
+                <p className="mt-1 text-sm leading-6 text-muted">
+                  0 dB keeps the original level, negative values make it quieter, and positive
+                  values make it louder.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAudioVolumeMute((current) => !current);
+                }}
+                className={
+                  audioVolumeMute
+                    ? "rounded-full bg-[#111111] px-4 py-2 text-sm font-semibold text-white"
+                    : "rounded-full border border-panel-border bg-white px-4 py-2 text-sm font-semibold text-foreground"
+                }
+              >
+                {audioVolumeMute ? "Mute enabled" : "Mute"}
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-4 lg:grid-cols-[0.42fr_0.58fr]">
+              <label className="grid gap-2 text-sm font-medium text-foreground">
+                Gain (dB)
+                <input
+                  type="number"
+                  min="-30"
+                  max="20"
+                  step="0.5"
+                  value={audioVolumeGainDb}
+                  onChange={(event) => {
+                    setAudioVolumeMute(false);
+                    setAudioVolumeGainDb(event.target.value);
+                  }}
+                  disabled={audioVolumeMute}
+                  className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm disabled:cursor-not-allowed disabled:bg-[#f5f1ea] disabled:text-muted"
+                />
+              </label>
+
+              <label className="grid gap-2 text-sm font-medium text-foreground">
+                Drag to adjust
+                <input
+                  type="range"
+                  min="-30"
+                  max="20"
+                  step="0.5"
+                  value={Number.isFinite(currentGainValue) ? currentGainValue : 0}
+                  onChange={(event) => {
+                    setAudioVolumeMute(false);
+                    setAudioVolumeGainDb(event.target.value);
+                  }}
+                  disabled={audioVolumeMute}
+                  className="mt-3 w-full accent-[#111111] disabled:cursor-not-allowed"
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {audioVolumeQuickOptions.map((option) => {
+                const isActive =
+                  option.value === "mute"
+                    ? audioVolumeMute
+                    : !audioVolumeMute && Number(audioVolumeGainDb || "0") === option.value;
+
+                return (
+                  <button
+                    key={option.label}
+                    type="button"
+                    onClick={() => {
+                      if (option.value === "mute") {
+                        setAudioVolumeMute(true);
+                        return;
+                      }
+
+                      setAudioVolumeMute(false);
+                      setAudioVolumeGainDb(String(option.value));
+                    }}
+                    className={
+                      isActive
+                        ? "rounded-full bg-[#111111] px-3.5 py-2 text-sm font-semibold text-white"
+                        : "rounded-full border border-panel-border bg-white px-3.5 py-2 text-sm font-semibold text-foreground"
+                    }
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-[1.5rem] bg-white/78 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Optional range</p>
+                <p className="mt-1 text-sm leading-6 text-muted">
+                  Apply the volume change to the full file or just one selected time range.
+                </p>
+              </div>
+              <label className="inline-flex items-center gap-2 text-sm font-medium text-foreground">
+                <input
+                  type="checkbox"
+                  checked={audioVolumeUseCustomRange}
+                  onChange={(event) => {
+                    setAudioVolumeUseCustomRange(event.target.checked);
+                  }}
+                  className="h-4 w-4"
+                />
+                Use custom range
+              </label>
+            </div>
+
+            {audioVolumeUseCustomRange ? (
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  Start time (seconds)
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={audioVolumeStartTime}
+                    onChange={(event) => {
+                      setAudioVolumeStartTime(event.target.value);
+                    }}
+                    className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+                  />
+                </label>
+
+                <label className="grid gap-2 text-sm font-medium text-foreground">
+                  End time (seconds)
+                  <input
+                    type="number"
+                    min="0.1"
+                    step="0.1"
+                    value={audioVolumeEndTime}
+                    onChange={(event) => {
+                      setAudioVolumeEndTime(event.target.value);
+                    }}
+                    className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            <label className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-foreground">
+              <input
+                type="checkbox"
+                checked={audioVolumePreventClipping}
+                onChange={(event) => {
+                  setAudioVolumePreventClipping(event.target.checked);
+                }}
+                className="h-4 w-4"
+              />
+              Prevent clipping on louder exports
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Source</p>
+              <p className="mt-2 text-sm font-semibold">
+                {selectedAudioVolumeAsset?.originalName ?? "Choose media"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">File type</p>
+              <p className="mt-2 text-sm font-semibold">
+                {selectedAudioVolumeAsset
+                  ? isVideoAsset(selectedAudioVolumeAsset)
+                    ? "Video with audio"
+                    : "Audio file"
+                  : "Unavailable"}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Target summary</p>
+              <p className="mt-2 text-sm font-semibold">
+                {formatAudioVolumeTargetSummary(
+                  selectedAudioVolumeAsset,
+                  audioVolumeTargetPlan.target,
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-[1.5rem] bg-white/78 px-4 py-4 text-sm leading-6 text-muted">
+            Video sources keep a video export, while audio-only sources stay in an audio-only
+            export. Use this page before transition merge if different clips feel too loud or too
+            quiet compared with each other.
+          </div>
+
+          {audioVolumeTargetPlan.errorMessage ? (
+            <p className="rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
+              {audioVolumeTargetPlan.errorMessage}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              void handleAudioVolumeJob();
+            }}
+            disabled={
+              busyAction === "audio-volume" ||
+              !audioVolumeAssetId ||
+              !audioVolumeTargetPlan.target
+            }
+            className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busyAction === "audio-volume"
+              ? "Queueing audio volume..."
+              : "Queue audio volume job"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
   function renderTextOverlayPanel() {
     return (
       <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
@@ -5248,6 +5853,10 @@ export function EditorDashboard({
 
     if (activeView === "change-speed") {
       return renderChangeSpeedPanel();
+    }
+
+    if (activeView === "audio-volume") {
+      return renderAudioVolumePanel();
     }
 
     if (activeView === "text-overlay") {

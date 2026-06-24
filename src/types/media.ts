@@ -105,6 +105,14 @@ export type PlaybackSpeedTarget = {
   rate: number;
 };
 
+export type AudioVolumeTarget = {
+  gainDb?: number;
+  mute?: boolean;
+  startTime?: number;
+  endTime?: number;
+  preventClipping?: boolean;
+};
+
 export type TextOverlayTarget = {
   text: string;
   startTime?: number;
@@ -136,6 +144,7 @@ export type ProcessingJob = {
     | "extract-audio"
     | "edit-audio-track"
     | "change-speed"
+    | "audio-volume"
     | "overlay-text"
     | "crop-pad"
     | "convert-image";
@@ -159,6 +168,7 @@ export type ProcessingJob = {
       | AudioExtractTarget
       | AudioTrackEditTarget
       | PlaybackSpeedTarget
+      | AudioVolumeTarget
       | TextOverlayTarget
       | CropPadTarget
       | ConvertImageTarget;
