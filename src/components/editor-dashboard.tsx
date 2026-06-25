@@ -2544,6 +2544,7 @@ export function EditorDashboard({
   const [isLibraryRefreshing, setIsLibraryRefreshing] = useState(false);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [hasRestoredSession, setHasRestoredSession] = useState(false);
+  const [isWorkspaceInitializing, setIsWorkspaceInitializing] = useState(true);
   const [isRefreshing, startRefreshTransition] = useTransition();
 
   const hasProcessingJobs = jobs.some(
@@ -2713,6 +2714,33 @@ export function EditorDashboard({
     audioCapableAssets,
   });
   const assetLibraryAssets = assetLibraryScope.items;
+  const isWorkspaceHealthy = health?.status === "ok";
+  const workspaceStatusLabel = isWorkspaceInitializing
+    ? "Loading workspace"
+    : isWorkspaceHealthy
+      ? "Ready to edit"
+      : "Needs attention";
+  const workspaceStatusDescription = isWorkspaceInitializing
+    ? "Syncing the latest files and queue history for this page."
+    : isWorkspaceHealthy
+      ? "Uploads and queue actions are available on every route."
+      : errorMessage || "The editing service is taking longer than expected. Try Refresh again.";
+  const workspaceStatusBadge = isWorkspaceInitializing
+    ? "syncing"
+    : isWorkspaceHealthy
+      ? "online"
+      : "retry";
+  const assetsCountDisplay = isWorkspaceInitializing ? "..." : assets.length;
+  const jobsCountDisplay = isWorkspaceInitializing ? "..." : jobs.length;
+  const visibleAssetCountDisplay = isWorkspaceInitializing
+    ? "..."
+    : assetLibraryAssets.length;
+  const outputAssetCountDisplay = isWorkspaceInitializing
+    ? "..."
+    : assets.filter((asset) => asset.kind === "output").length;
+  const assetLibraryEmptyMessage = isWorkspaceInitializing
+    ? "Loading the shared library for this page..."
+    : assetLibraryScope.emptyMessage;
 
   function applyAssetsSnapshot(nextAssets: MediaAsset[]) {
     startRefreshTransition(() => {
@@ -3187,6 +3215,8 @@ export function EditorDashboard({
 
     async function loadInitialData() {
       try {
+        setIsWorkspaceInitializing(true);
+        setErrorMessage("");
         setFeedback("Preparing your workspace and loading the latest files.");
 
         const nextHealth = (await waitForBackendWake()) as HealthResponse;
@@ -3215,6 +3245,10 @@ export function EditorDashboard({
             ? error.message
             : "Could not connect to the editing service.",
         );
+      } finally {
+        if (isActive) {
+          setIsWorkspaceInitializing(false);
+        }
       }
     }
 
@@ -7437,6 +7471,33 @@ export function EditorDashboard({
   }
 
   function renderActivePanel() {
+    if (isWorkspaceInitializing && activeView !== "workspace") {
+      return (
+        <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+          <PanelHeader
+            eyebrow="Workspace sync"
+            title="Loading the latest files for this page"
+            badge="Shared"
+          />
+
+          <div className="mt-6 rounded-[1.5rem] bg-white/78 px-5 py-5 text-sm leading-6 text-muted">
+            <div className="flex items-center gap-3 text-foreground">
+              <span
+                aria-hidden="true"
+                className="h-4 w-4 animate-spin rounded-full border-2 border-[#111111]/20 border-t-[#111111]"
+              />
+              <p className="font-semibold">Syncing uploaded assets and queue history.</p>
+            </div>
+
+            <p className="mt-3">
+              Saved files and function-specific selections will appear here as soon as the
+              shared workspace finishes loading.
+            </p>
+          </div>
+        </section>
+      );
+    }
+
     if (activeView === "trim") {
       return renderTrimPanel();
     }
@@ -7581,16 +7642,14 @@ export function EditorDashboard({
                     Workspace status
                   </p>
                   <p className="mt-1 text-lg font-semibold">
-                    {health?.status === "ok" ? "Ready to edit" : "Starting up"}
+                    {workspaceStatusLabel}
                   </p>
                   <p className="mt-2 text-sm text-white/60">
-                    {health?.status === "ok"
-                      ? "Uploads and queue actions are available on every route."
-                      : "Please wait a moment while the workspace wakes up."}
+                    {workspaceStatusDescription}
                   </p>
                 </div>
                 <div className="rounded-full bg-[#ff6b2c] px-3 py-1 text-xs font-semibold text-black">
-                  {health?.status === "ok" ? "online" : "warming up"}
+                  {workspaceStatusBadge}
                 </div>
               </div>
 
@@ -7609,16 +7668,18 @@ export function EditorDashboard({
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-2xl bg-white px-4 py-3 text-black">
                   <p className="text-xs uppercase tracking-[0.2em] text-black/45">Assets</p>
-                  <p className="mt-2 text-lg font-semibold">{assets.length}</p>
+                  <p className="mt-2 text-lg font-semibold">{assetsCountDisplay}</p>
                 </div>
                 <div className="rounded-2xl bg-white/10 px-4 py-3">
                   <p className="text-xs uppercase tracking-[0.2em] text-white/45">Jobs</p>
-                  <p className="mt-2 text-lg font-semibold">{jobs.length}</p>
+                  <p className="mt-2 text-lg font-semibold">{jobsCountDisplay}</p>
                 </div>
                 <div className="rounded-2xl bg-white/10 px-4 py-3">
                   <p className="text-xs uppercase tracking-[0.2em] text-white/45">Polling</p>
                   <p className="mt-2 text-lg font-semibold">
-                    {hasProcessingJobs || isRefreshing ? "Active" : "Idle"}
+                    {hasProcessingJobs || isRefreshing || isWorkspaceInitializing
+                      ? "Active"
+                      : "Idle"}
                   </p>
                 </div>
               </div>
@@ -7732,17 +7793,15 @@ export function EditorDashboard({
             <p className="text-xs uppercase tracking-[0.16em] text-muted">
               {assetLibraryScope.countLabel}
             </p>
-            <p className="mt-2 text-lg font-semibold">{assetLibraryAssets.length}</p>
+            <p className="mt-2 text-lg font-semibold">{visibleAssetCountDisplay}</p>
           </div>
           <div className="rounded-[1.35rem] bg-white/75 px-4 py-4">
             <p className="text-xs uppercase tracking-[0.16em] text-muted">All assets</p>
-            <p className="mt-2 text-lg font-semibold">{assets.length}</p>
+            <p className="mt-2 text-lg font-semibold">{assetsCountDisplay}</p>
           </div>
           <div className="rounded-[1.35rem] bg-white/75 px-4 py-4">
             <p className="text-xs uppercase tracking-[0.16em] text-muted">Current outputs</p>
-            <p className="mt-2 text-lg font-semibold">
-              {assets.filter((asset) => asset.kind === "output").length}
-            </p>
+            <p className="mt-2 text-lg font-semibold">{outputAssetCountDisplay}</p>
           </div>
         </div>
 
@@ -7827,7 +7886,7 @@ export function EditorDashboard({
             ))
           ) : (
             <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
-              {assetLibraryScope.emptyMessage}
+              {assetLibraryEmptyMessage}
             </div>
           )}
         </div>
