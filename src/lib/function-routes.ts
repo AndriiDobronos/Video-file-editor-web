@@ -9,6 +9,7 @@ export type EditorView =
   | "change-speed"
   | "audio-volume"
   | "text-overlay"
+  | "subtitle-burn-in"
   | "transition-merge"
   | "merge"
   | "normalize"
@@ -87,6 +88,13 @@ export const functionRouteOptions: Array<{
     label: "Add text overlay",
     shortLabel: "Text",
     description: "Burn one title, caption, or short note directly into a video export.",
+  },
+  {
+    view: "subtitle-burn-in",
+    href: "/functions/subtitle-burn-in",
+    label: "Subtitle burn-in",
+    shortLabel: "Subtitles",
+    description: "Import one .srt file and burn timed subtitles directly into a video export.",
   },
   {
     view: "transition-merge",
@@ -192,6 +200,12 @@ export const editorViewMeta: Record<
     eyebrow: "Function",
     description:
       "Add a burned-in title, caption, or note directly on top of one video export.",
+  },
+  "subtitle-burn-in": {
+    label: "Subtitle burn-in",
+    eyebrow: "Function",
+    description:
+      "Import a timed .srt subtitle file, style the captions, and burn them directly into one video export.",
   },
   "transition-merge": {
     label: "Transition merge",

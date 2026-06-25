@@ -32,6 +32,8 @@ import type {
   NormalizeTargetProfile,
   PlaybackSpeedTarget,
   ProcessingJob,
+  SubtitleBurnInAlignment,
+  SubtitleBurnInTarget,
   TransitionMergeAudioMode,
   TransitionMergeTarget,
   TransitionMergeType,
@@ -362,6 +364,16 @@ const textOverlayVerticalOptions: Array<{
   { value: "bottom", label: "Bottom" },
 ];
 
+const subtitleAlignmentOptions: Array<{
+  value: SubtitleBurnInAlignment;
+  label: string;
+}> = [
+  { value: "bottom-center", label: "Bottom center" },
+  { value: "bottom-left", label: "Bottom left" },
+  { value: "bottom-right", label: "Bottom right" },
+  { value: "top-center", label: "Top center" },
+];
+
 type MergeCompatibilityCheck = {
   label: string;
   readValue: (asset: MediaAsset) => string;
@@ -450,6 +462,12 @@ const sessionStorageKeys = {
   textOverlayBackgroundOpacity: "vfe:text-overlay-background-opacity",
   textOverlayHorizontal: "vfe:text-overlay-horizontal",
   textOverlayVertical: "vfe:text-overlay-vertical",
+  subtitleBurnInAssetId: "vfe:subtitle-burn-in-asset-id",
+  subtitleBurnInFontSize: "vfe:subtitle-burn-in-font-size",
+  subtitleBurnInFontColor: "vfe:subtitle-burn-in-font-color",
+  subtitleBurnInOutlineColor: "vfe:subtitle-burn-in-outline-color",
+  subtitleBurnInAlignment: "vfe:subtitle-burn-in-alignment",
+  subtitleBurnInMarginVertical: "vfe:subtitle-burn-in-margin-vertical",
   transitionMergePrimaryAssetId: "vfe:transition-merge-primary-asset-id",
   transitionMergeSecondaryAssetId: "vfe:transition-merge-secondary-asset-id",
   transitionMergeType: "vfe:transition-merge-type",
@@ -655,11 +673,18 @@ function formatJobCompactSummary(
   assetLookup: Map<string, MediaAsset>,
 ) {
   const outputAsset = job.outputAssetId ? assetLookup.get(job.outputAssetId) ?? null : null;
+  const subtitleFileName =
+    job.type === "subtitle-burn-in" &&
+    job.options.target &&
+    "subtitleFileName" in job.options.target
+      ? job.options.target.subtitleFileName
+      : null;
   const details = [
     `#${job.id.slice(0, 8)}`,
     new Date(job.createdAt).toLocaleString(),
     `${job.sourceAssetIds.length} source${job.sourceAssetIds.length === 1 ? "" : "s"}`,
     formatJobProgress(job.progress) ?? formatStatusLabel(job.status),
+    subtitleFileName ? `SRT: ${subtitleFileName}` : null,
     outputAsset ? outputAsset.originalName : job.outputAssetId ? "Result ready" : null,
   ].filter((value): value is string => Boolean(value));
 
@@ -2051,6 +2076,136 @@ function formatTextOverlayTargetSummary(target: TextOverlayTarget | null) {
   return details.filter((value): value is string => Boolean(value)).join(" | ");
 }
 
+function countSubtitleCueEntries(content: string) {
+  const matches = content.match(
+    /^\s*\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,.]\d{3}\s*$/gm,
+  );
+
+  return matches?.length ?? 0;
+}
+
+function looksLikeSrtContent(content: string) {
+  return countSubtitleCueEntries(content) > 0;
+}
+
+function buildSubtitleBurnInTargetPlan(input: {
+  asset: MediaAsset | null;
+  subtitleFileName: string;
+  subtitleContent: string;
+  fontSize: string;
+  fontColor: string;
+  outlineColor: string;
+  alignment: SubtitleBurnInAlignment;
+  marginVertical: string;
+}) {
+  if (!input.asset) {
+    return {
+      target: null,
+      errorMessage: "Choose one video clip before burning subtitles.",
+    };
+  }
+
+  if (!isVideoAsset(input.asset)) {
+    return {
+      target: null,
+      errorMessage: "Subtitle burn-in currently works with video clips only.",
+    };
+  }
+
+  const subtitleFileName = input.subtitleFileName.trim();
+  const subtitleContent = input.subtitleContent.trim();
+
+  if (!subtitleFileName) {
+    return {
+      target: null,
+      errorMessage: "Import one .srt subtitle file before queueing the job.",
+    };
+  }
+
+  if (!/\.srt$/i.test(subtitleFileName)) {
+    return {
+      target: null,
+      errorMessage: "Subtitle burn-in currently expects a .srt subtitle file.",
+    };
+  }
+
+  if (!subtitleContent) {
+    return {
+      target: null,
+      errorMessage: "The imported subtitle file is empty.",
+    };
+  }
+
+  if (!looksLikeSrtContent(subtitleContent)) {
+    return {
+      target: null,
+      errorMessage: "The imported file does not look like a valid .srt subtitle file.",
+    };
+  }
+
+  const fontSizeResult = parseOptionalPositiveInteger(input.fontSize, "Font size");
+  const marginVerticalResult = parseOptionalPositiveInteger(
+    input.marginVertical,
+    "Vertical margin",
+  );
+  const errorMessage = fontSizeResult.error ?? marginVerticalResult.error ?? null;
+
+  if (errorMessage) {
+    return {
+      target: null,
+      errorMessage,
+    };
+  }
+
+  const fontColor = input.fontColor.trim();
+  const outlineColor = input.outlineColor.trim();
+
+  if (fontColor && !/^#[0-9a-fA-F]{6}$/.test(fontColor)) {
+    return {
+      target: null,
+      errorMessage: "Font color must use a six-digit hex value such as #ffffff.",
+    };
+  }
+
+  if (outlineColor && !/^#[0-9a-fA-F]{6}$/.test(outlineColor)) {
+    return {
+      target: null,
+      errorMessage: "Outline color must use a six-digit hex value such as #111111.",
+    };
+  }
+
+  const target: SubtitleBurnInTarget = {
+    subtitleFileName,
+    subtitleContent,
+    fontSize: fontSizeResult.value ?? 34,
+    fontColor: fontColor || "#ffffff",
+    outlineColor: outlineColor || "#111111",
+    alignment: input.alignment,
+    marginVertical: marginVerticalResult.value ?? 40,
+  };
+
+  return {
+    target,
+    errorMessage: null,
+  };
+}
+
+function formatSubtitleBurnInTargetSummary(target: SubtitleBurnInTarget | null) {
+  if (!target) {
+    return "Target is unavailable.";
+  }
+
+  const details = [
+    target.subtitleFileName,
+    `${countSubtitleCueEntries(target.subtitleContent)} cues`,
+    `${target.fontSize ?? 34}px`,
+    target.alignment ?? "bottom-center",
+    `${target.marginVertical ?? 40}px margin`,
+  ];
+
+  return details.join(" | ");
+}
+
 function buildCropPadTargetPlan(input: {
   asset: MediaAsset | null;
   mode: CropPadMode;
@@ -2200,6 +2355,8 @@ function getJobTypeLabel(type: ProcessingJob["type"]) {
       return "Audio volume";
     case "overlay-text":
       return "Text overlay";
+    case "subtitle-burn-in":
+      return "Subtitle burn-in";
     case "merge":
       return "Merge";
     case "transition-merge":
@@ -2234,6 +2391,7 @@ function getAssetLibraryScope(
     activeView === "animation-export" ||
     activeView === "extract-frame" ||
     activeView === "text-overlay" ||
+    activeView === "subtitle-burn-in" ||
     activeView === "transition-merge" ||
     activeView === "merge" ||
     activeView === "normalize"
@@ -2507,6 +2665,16 @@ export function EditorDashboard({
     useState<TextOverlayHorizontal>("center");
   const [textOverlayVertical, setTextOverlayVertical] =
     useState<TextOverlayVertical>("bottom");
+  const [subtitleBurnInAssetId, setSubtitleBurnInAssetId] = useState("");
+  const [subtitleFileName, setSubtitleFileName] = useState("");
+  const [subtitleContent, setSubtitleContent] = useState("");
+  const [subtitleBurnInFontSize, setSubtitleBurnInFontSize] = useState("34");
+  const [subtitleBurnInFontColor, setSubtitleBurnInFontColor] = useState("#ffffff");
+  const [subtitleBurnInOutlineColor, setSubtitleBurnInOutlineColor] =
+    useState("#111111");
+  const [subtitleBurnInAlignment, setSubtitleBurnInAlignment] =
+    useState<SubtitleBurnInAlignment>("bottom-center");
+  const [subtitleBurnInMarginVertical, setSubtitleBurnInMarginVertical] = useState("40");
   const [transitionMergePrimaryAssetId, setTransitionMergePrimaryAssetId] = useState("");
   const [transitionMergeSecondaryAssetId, setTransitionMergeSecondaryAssetId] = useState("");
   const [transitionMergeType, setTransitionMergeType] =
@@ -2645,6 +2813,19 @@ export function EditorDashboard({
       textOverlayBackgroundColor,
       Number(textOverlayBackgroundOpacity || "72"),
     ) ?? "rgba(17, 17, 17, 0.72)";
+  const selectedSubtitleBurnInAsset =
+    videoAssets.find((asset) => asset.id === subtitleBurnInAssetId) ?? null;
+  const subtitleBurnInTargetPlan = buildSubtitleBurnInTargetPlan({
+    asset: selectedSubtitleBurnInAsset,
+    subtitleFileName,
+    subtitleContent,
+    fontSize: subtitleBurnInFontSize,
+    fontColor: subtitleBurnInFontColor,
+    outlineColor: subtitleBurnInOutlineColor,
+    alignment: subtitleBurnInAlignment,
+    marginVertical: subtitleBurnInMarginVertical,
+  });
+  const subtitleCueCount = countSubtitleCueEntries(subtitleContent);
   const selectedTransitionPrimaryAsset =
     videoAssets.find((asset) => asset.id === transitionMergePrimaryAssetId) ?? null;
   const selectedTransitionSecondaryAsset =
@@ -2878,6 +3059,14 @@ export function EditorDashboard({
 
       if (!hasSelectedTextOverlayAsset) {
         setTextOverlayAssetId(nextVideoAssets[0]?.id ?? "");
+      }
+
+      const hasSelectedSubtitleAsset = nextVideoAssets.some(
+        (asset) => asset.id === subtitleBurnInAssetId,
+      );
+
+      if (!hasSelectedSubtitleAsset) {
+        setSubtitleBurnInAssetId(nextVideoAssets[0]?.id ?? "");
       }
 
       const hasSelectedTransitionPrimaryAsset = nextVideoAssets.some(
@@ -3134,6 +3323,27 @@ export function EditorDashboard({
         sessionStorageKeys.textOverlayVertical,
         "bottom",
       ) as TextOverlayVertical,
+    );
+    setSubtitleBurnInAssetId(
+      readSessionString(sessionStorageKeys.subtitleBurnInAssetId, ""),
+    );
+    setSubtitleBurnInFontSize(
+      readSessionString(sessionStorageKeys.subtitleBurnInFontSize, "34"),
+    );
+    setSubtitleBurnInFontColor(
+      readSessionString(sessionStorageKeys.subtitleBurnInFontColor, "#ffffff"),
+    );
+    setSubtitleBurnInOutlineColor(
+      readSessionString(sessionStorageKeys.subtitleBurnInOutlineColor, "#111111"),
+    );
+    setSubtitleBurnInAlignment(
+      readSessionString(
+        sessionStorageKeys.subtitleBurnInAlignment,
+        "bottom-center",
+      ) as SubtitleBurnInAlignment,
+    );
+    setSubtitleBurnInMarginVertical(
+      readSessionString(sessionStorageKeys.subtitleBurnInMarginVertical, "40"),
     );
     setTransitionMergePrimaryAssetId(
       readSessionString(sessionStorageKeys.transitionMergePrimaryAssetId, ""),
@@ -3801,6 +4011,72 @@ export function EditorDashboard({
     }
 
     window.sessionStorage.setItem(
+      sessionStorageKeys.subtitleBurnInAssetId,
+      subtitleBurnInAssetId,
+    );
+  }, [hasRestoredSession, subtitleBurnInAssetId]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.subtitleBurnInFontSize,
+      subtitleBurnInFontSize,
+    );
+  }, [hasRestoredSession, subtitleBurnInFontSize]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.subtitleBurnInFontColor,
+      subtitleBurnInFontColor,
+    );
+  }, [hasRestoredSession, subtitleBurnInFontColor]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.subtitleBurnInOutlineColor,
+      subtitleBurnInOutlineColor,
+    );
+  }, [hasRestoredSession, subtitleBurnInOutlineColor]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.subtitleBurnInAlignment,
+      subtitleBurnInAlignment,
+    );
+  }, [hasRestoredSession, subtitleBurnInAlignment]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      sessionStorageKeys.subtitleBurnInMarginVertical,
+      subtitleBurnInMarginVertical,
+    );
+  }, [hasRestoredSession, subtitleBurnInMarginVertical]);
+
+  useEffect(() => {
+    if (!hasRestoredSession) {
+      return;
+    }
+
+    window.sessionStorage.setItem(
       sessionStorageKeys.transitionMergePrimaryAssetId,
       transitionMergePrimaryAssetId,
     );
@@ -4377,6 +4653,71 @@ export function EditorDashboard({
     }
   }
 
+  async function handleSubtitleFileSelection(file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    setBusyAction("subtitle-import");
+    setErrorMessage("");
+
+    try {
+      const nextContent = await file.text();
+      setSubtitleFileName(file.name);
+      setSubtitleContent(nextContent);
+      setFeedback(
+        `Loaded ${file.name} with ${countSubtitleCueEntries(nextContent)} subtitle cues.`,
+      );
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Subtitle file import failed.",
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleSubtitleBurnInJob() {
+    if (!subtitleBurnInAssetId) {
+      setErrorMessage("Choose one video clip before burning subtitles.");
+      return;
+    }
+
+    if (!subtitleBurnInTargetPlan.target) {
+      setErrorMessage(
+        subtitleBurnInTargetPlan.errorMessage ??
+          "Subtitle burn-in target could not be prepared.",
+      );
+      return;
+    }
+
+    setBusyAction("subtitle-burn-in");
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Preparing your subtitle burn-in request.");
+      const response = await fetchJson<JobResponse>("/api/v1/jobs/subtitle-burn-in", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          assetId: subtitleBurnInAssetId,
+          target: subtitleBurnInTargetPlan.target,
+        }),
+      });
+
+      await loadJobs();
+      setFeedback(`Subtitle burn-in job ${response.item.id.slice(0, 8)} has been queued.`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Subtitle burn-in job failed.",
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   async function handleTransitionMergeJob() {
     if (!transitionMergePrimaryAssetId || !transitionMergeSecondaryAssetId) {
       setErrorMessage("Choose two video clips before queueing a transition merge.");
@@ -4691,6 +5032,82 @@ export function EditorDashboard({
       setFeedback(response.message ?? `Deleted ${asset.originalName}.`);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Asset delete failed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleDeleteJobHistory(job: ProcessingJob) {
+    if (job.status === "queued" || job.status === "processing") {
+      setErrorMessage("Wait until the job finishes before removing it from queue history.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Remove job ${job.id.slice(0, 8)} from queue history? Generated files will stay in the shared asset library.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBusyAction(`job-delete:${job.id}`);
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Preparing queue history cleanup.");
+      const response = await fetchJson<{ message?: string }>(`/api/v1/jobs/${job.id}`, {
+        method: "DELETE",
+      });
+
+      await loadJobs();
+      setFeedback(response.message ?? `Removed job ${job.id.slice(0, 8)} from queue history.`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Queue history cleanup failed.",
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleClearFailedJobs() {
+    const failedJobCount = jobs.filter((job) => job.status === "failed").length;
+
+    if (failedJobCount === 0) {
+      setFeedback("There are no failed jobs to remove right now.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Remove ${failedJobCount} failed job${failedJobCount === 1 ? "" : "s"} from queue history? Generated files will stay in the shared asset library.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBusyAction("job-clear-failed");
+    setErrorMessage("");
+
+    try {
+      await ensureBackendReady("Cleaning failed queue history.");
+      const response = await fetchJson<{ message?: string; deletedCount?: number }>(
+        "/api/v1/jobs/clear-failed",
+        {
+          method: "POST",
+        },
+      );
+
+      await loadJobs();
+      setFeedback(
+        response.message ??
+          `Removed ${response.deletedCount ?? failedJobCount} failed job${failedJobCount === 1 ? "" : "s"}.`,
+      );
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed job cleanup did not finish.",
+      );
     } finally {
       setBusyAction(null);
     }
@@ -6256,9 +6673,8 @@ export function EditorDashboard({
           </div>
 
           <div className="rounded-[1.5rem] bg-white/78 px-4 py-4 text-sm leading-6 text-muted">
-            This version burns the text directly into the MP4 export. FFmpeg can also render
-            real subtitle files later, but this page already covers titles, captions, and
-            simple on-screen notes.
+            This version burns the text directly into the MP4 export. Use the Subtitle burn-in
+            page for timed `.srt` captions, and keep this page for titles or one-off notes.
           </div>
 
           {textOverlayTargetPlan.errorMessage ? (
@@ -6282,6 +6698,238 @@ export function EditorDashboard({
             {busyAction === "text-overlay"
               ? "Queueing text overlay..."
               : "Queue text overlay job"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  function renderSubtitleBurnInPanel() {
+    return (
+      <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
+        <PanelHeader
+          eyebrow="Subtitle burn-in function"
+          title="Import one .srt file and burn timed subtitles into a video"
+          badge="Function"
+        />
+
+        <div className="mt-6 space-y-4">
+          {videoAssets.length > 0 ? (
+            <div className="grid max-h-[18rem] gap-3 overflow-y-auto pr-1">
+              {videoAssets.map((asset) => (
+                <SelectableAssetCard
+                  key={asset.id}
+                  asset={asset}
+                  selected={subtitleBurnInAssetId === asset.id}
+                  inputType="radio"
+                  inputName="subtitle-burn-in-asset"
+                  onSelect={() => {
+                    setSubtitleBurnInAssetId(asset.id);
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
+              Upload a video clip to enable subtitle burn-in.
+            </div>
+          )}
+
+          <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Import subtitle file (.srt)
+              <input
+                type="file"
+                accept=".srt,text/plain"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  void handleSubtitleFileSelection(file);
+                  event.currentTarget.value = "";
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm file:mr-4 file:rounded-full file:border-0 file:bg-[#111111] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
+              />
+            </label>
+
+            <div className="rounded-[1.4rem] border border-panel-border bg-white/78 p-4">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Imported SRT</p>
+              {subtitleFileName ? (
+                <div className="mt-3 space-y-2">
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {subtitleFileName}
+                  </p>
+                  <p className="text-sm leading-6 text-muted">
+                    {subtitleCueCount} cue{subtitleCueCount === 1 ? "" : "s"} detected
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSubtitleFileName("");
+                      setSubtitleContent("");
+                    }}
+                    className="rounded-full border border-panel-border bg-white px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef]"
+                  >
+                    Clear SRT
+                  </button>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm leading-6 text-muted">
+                  Import one UTF-8 `.srt` file to load the subtitle timing and text.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <label className="grid gap-2 text-sm font-medium text-foreground">
+            Subtitle preview
+            <textarea
+              value={subtitleContent}
+              onChange={(event) => {
+                setSubtitleContent(event.target.value);
+              }}
+              rows={8}
+              placeholder="Imported .srt content will appear here."
+              className="min-h-[12rem] rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+            />
+          </label>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Font size
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={subtitleBurnInFontSize}
+                onChange={(event) => {
+                  setSubtitleBurnInFontSize(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Alignment
+              <select
+                value={subtitleBurnInAlignment}
+                onChange={(event) => {
+                  setSubtitleBurnInAlignment(
+                    event.target.value as SubtitleBurnInAlignment,
+                  );
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              >
+                {subtitleAlignmentOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Font color
+              <div className="flex items-center gap-3 rounded-2xl border border-panel-border bg-white px-4 py-3">
+                <input
+                  type="color"
+                  value={subtitleBurnInFontColor}
+                  onChange={(event) => {
+                    setSubtitleBurnInFontColor(event.target.value);
+                  }}
+                  className="h-10 w-14 rounded-md border border-panel-border bg-transparent"
+                />
+                <span className="text-sm text-muted">{subtitleBurnInFontColor}</span>
+              </div>
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground">
+              Outline color
+              <div className="flex items-center gap-3 rounded-2xl border border-panel-border bg-white px-4 py-3">
+                <input
+                  type="color"
+                  value={subtitleBurnInOutlineColor}
+                  onChange={(event) => {
+                    setSubtitleBurnInOutlineColor(event.target.value);
+                  }}
+                  className="h-10 w-14 rounded-md border border-panel-border bg-transparent"
+                />
+                <span className="text-sm text-muted">{subtitleBurnInOutlineColor}</span>
+              </div>
+            </label>
+
+            <label className="grid gap-2 text-sm font-medium text-foreground lg:col-span-2">
+              Distance from top or bottom edge
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={subtitleBurnInMarginVertical}
+                onChange={(event) => {
+                  setSubtitleBurnInMarginVertical(event.target.value);
+                }}
+                className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-[1.4rem] border border-panel-border bg-white/78 p-4">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Selected video</p>
+              {selectedSubtitleBurnInAsset ? (
+                <div className="mt-3 flex items-center gap-3">
+                  <AssetThumbnail asset={selectedSubtitleBurnInAsset} compact />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-foreground">
+                      {selectedSubtitleBurnInAsset.originalName}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-muted">
+                      {formatAssetSummary(selectedSubtitleBurnInAsset)}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-muted">
+                  Choose the video that should receive subtitles.
+                </p>
+              )}
+            </div>
+
+            <div className="rounded-[1.4rem] border border-panel-border bg-white/78 p-4">
+              <p className="text-xs uppercase tracking-[0.16em] text-muted">Burn-in summary</p>
+              <p className="mt-3 text-sm leading-6 text-muted">
+                {formatSubtitleBurnInTargetSummary(subtitleBurnInTargetPlan.target)}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-[1.5rem] bg-white/78 px-4 py-4 text-sm leading-6 text-muted">
+            The `.srt` file controls when each subtitle appears. This page controls how the
+            subtitles look in the final video export.
+          </div>
+
+          {subtitleBurnInTargetPlan.errorMessage ? (
+            <p className="rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
+              {subtitleBurnInTargetPlan.errorMessage}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              void handleSubtitleBurnInJob();
+            }}
+            disabled={
+              busyAction === "subtitle-burn-in" ||
+              busyAction === "subtitle-import" ||
+              !subtitleBurnInAssetId ||
+              !subtitleBurnInTargetPlan.target
+            }
+            className="rounded-full bg-foreground px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busyAction === "subtitle-import"
+              ? "Importing subtitles..."
+              : busyAction === "subtitle-burn-in"
+                ? "Queueing subtitle burn-in..."
+                : "Queue subtitle burn-in job"}
           </button>
         </div>
       </section>
@@ -7388,6 +8036,8 @@ export function EditorDashboard({
   }
 
   function renderJobsPanel() {
+    const failedJobs = jobs.filter((job) => job.status === "failed");
+
     return (
       <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
         <PanelHeader
@@ -7400,10 +8050,32 @@ export function EditorDashboard({
           Queue history shows the processing requests you sent to the worker. The shared asset library below stores the uploaded source files and the generated outputs that came back after processing.
         </p>
 
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              void handleClearFailedJobs();
+            }}
+            disabled={busyAction === "job-clear-failed" || failedJobs.length === 0}
+            className="rounded-full border border-panel-border bg-white px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busyAction === "job-clear-failed"
+              ? "Clearing failed jobs..."
+              : "Clear failed jobs"}
+          </button>
+          <p className="text-sm text-muted">
+            Deletes only queue history entries. Uploaded files and finished outputs stay in the
+            shared library.
+          </p>
+        </div>
+
         <div className="mt-6 grid max-h-[34rem] gap-4 overflow-y-auto pr-1">
           {jobs.length > 0 ? (
             jobs.map((job) => {
               const primarySourceAsset = getJobPrimarySourceAsset(job, assetLookup);
+              const canDeleteHistory =
+                job.status === "completed" || job.status === "failed";
+              const isDeletingHistory = busyAction === `job-delete:${job.id}`;
 
               return (
                 <article
@@ -7448,6 +8120,18 @@ export function EditorDashboard({
                         >
                           Download result
                         </a>
+                      ) : null}
+                      {canDeleteHistory ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleDeleteJobHistory(job);
+                          }}
+                          disabled={isDeletingHistory}
+                          className="rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isDeletingHistory ? "Deleting..." : "Delete history"}
+                        </button>
                       ) : null}
                     </div>
                   </div>
@@ -7532,6 +8216,10 @@ export function EditorDashboard({
 
     if (activeView === "text-overlay") {
       return renderTextOverlayPanel();
+    }
+
+    if (activeView === "subtitle-burn-in") {
+      return renderSubtitleBurnInPanel();
     }
 
     if (activeView === "transition-merge") {

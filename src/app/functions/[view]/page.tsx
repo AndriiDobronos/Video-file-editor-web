@@ -13,6 +13,7 @@ export async function generateStaticParams() {
     { view: "change-speed" },
     { view: "audio-volume" },
     { view: "text-overlay" },
+    { view: "subtitle-burn-in" },
     { view: "transition-merge" },
     { view: "merge" },
     { view: "normalize" },

@@ -178,6 +178,22 @@ export type TextOverlayTarget = {
   vertical?: TextOverlayVertical;
 };
 
+export type SubtitleBurnInAlignment =
+  | "bottom-center"
+  | "bottom-left"
+  | "bottom-right"
+  | "top-center";
+
+export type SubtitleBurnInTarget = {
+  subtitleFileName: string;
+  subtitleContent: string;
+  fontSize?: number;
+  fontColor?: string;
+  outlineColor?: string;
+  alignment?: SubtitleBurnInAlignment;
+  marginVertical?: number;
+};
+
 export type CropPadTarget = {
   mode: CropPadMode;
   width: number;
@@ -202,6 +218,7 @@ export type ProcessingJob = {
     | "change-speed"
     | "audio-volume"
     | "overlay-text"
+    | "subtitle-burn-in"
     | "crop-pad"
     | "convert-image";
   status: "queued" | "processing" | "completed" | "failed";
@@ -228,6 +245,7 @@ export type ProcessingJob = {
       | PlaybackSpeedTarget
       | AudioVolumeTarget
       | TextOverlayTarget
+      | SubtitleBurnInTarget
       | CropPadTarget
       | ConvertImageTarget;
   };
