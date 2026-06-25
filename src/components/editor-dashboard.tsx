@@ -622,6 +622,50 @@ function formatJobProgress(progress: ProcessingJob["progress"]) {
   return null;
 }
 
+function getJobPrimarySourceAsset(
+  job: ProcessingJob,
+  assetLookup: Map<string, MediaAsset>,
+) {
+  return job.sourceAssetIds.map((assetId) => assetLookup.get(assetId) ?? null).find(Boolean) ?? null;
+}
+
+function formatJobSourceLabel(
+  job: ProcessingJob,
+  assetLookup: Map<string, MediaAsset>,
+) {
+  const sourceNames = job.sourceAssetIds
+    .map((assetId) => assetLookup.get(assetId)?.originalName ?? null)
+    .filter((value): value is string => Boolean(value));
+
+  if (sourceNames.length === 0) {
+    return job.sourceAssetIds.length === 1
+      ? "Source file is no longer available in the shared library"
+      : `${job.sourceAssetIds.length} queued source files`;
+  }
+
+  if (sourceNames.length === 1) {
+    return sourceNames[0];
+  }
+
+  return `${sourceNames[0]} +${sourceNames.length - 1} more`;
+}
+
+function formatJobCompactSummary(
+  job: ProcessingJob,
+  assetLookup: Map<string, MediaAsset>,
+) {
+  const outputAsset = job.outputAssetId ? assetLookup.get(job.outputAssetId) ?? null : null;
+  const details = [
+    `#${job.id.slice(0, 8)}`,
+    new Date(job.createdAt).toLocaleString(),
+    `${job.sourceAssetIds.length} source${job.sourceAssetIds.length === 1 ? "" : "s"}`,
+    formatJobProgress(job.progress) ?? formatStatusLabel(job.status),
+    outputAsset ? outputAsset.originalName : job.outputAssetId ? "Result ready" : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return details.join(" | ");
+}
+
 function isImageAsset(asset: MediaAsset) {
   return asset.mimeType.toLowerCase().startsWith("image/");
 }
@@ -2139,33 +2183,33 @@ function formatCropPadTargetSummary(
 function getJobTypeLabel(type: ProcessingJob["type"]) {
   switch (type) {
     case "trim":
-      return "Trim job";
+      return "Trim";
     case "compress-video":
-      return "Compress video job";
+      return "Compress video";
     case "export-animation":
-      return "Animation export job";
+      return "Animation export";
     case "extract-frame":
-      return "Extract frame job";
+      return "Extract frame";
     case "extract-audio":
-      return "Extract audio job";
+      return "Extract audio";
     case "edit-audio-track":
-      return "Audio track job";
+      return "Audio track";
     case "change-speed":
-      return "Change speed job";
+      return "Change speed";
     case "audio-volume":
-      return "Audio volume job";
+      return "Audio volume";
     case "overlay-text":
-      return "Text overlay job";
+      return "Text overlay";
     case "merge":
-      return "Merge job";
+      return "Merge";
     case "transition-merge":
-      return "Transition merge job";
+      return "Transition merge";
     case "normalize":
-      return "Normalize job";
+      return "Normalize";
     case "crop-pad":
-      return "Crop / pad job";
+      return "Crop / pad";
     case "convert-image":
-      return "Convert image job";
+      return "Convert image";
     default:
       return type;
   }
@@ -2505,6 +2549,7 @@ export function EditorDashboard({
   const hasProcessingJobs = jobs.some(
     (job) => job.status === "queued" || job.status === "processing",
   );
+  const assetLookup = new Map(assets.map((asset) => [asset.id, asset] as const));
   const videoAssets = assets.filter(isVideoAsset);
   const videoWithAudioAssets = videoAssets.filter(hasAudioStream);
   const audioOnlyAssets = assets.filter(isAudioOnlyAsset);
@@ -7317,62 +7362,70 @@ export function EditorDashboard({
           badge="Jobs"
         />
 
+        <p className="mt-5 rounded-[1.5rem] bg-white/72 px-4 py-4 text-sm leading-6 text-muted">
+          Queue history shows the processing requests you sent to the worker. The shared asset library below stores the uploaded source files and the generated outputs that came back after processing.
+        </p>
+
         <div className="mt-6 grid max-h-[34rem] gap-4 overflow-y-auto pr-1">
           {jobs.length > 0 ? (
-            jobs.map((job) => (
-              <article
-                key={job.id}
-                className="rounded-[1.5rem] border border-panel-border bg-white/78 p-5 shadow-sm"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg font-semibold">{getJobTypeLabel(job.type)}</p>
-                    <p className="mt-1 text-sm text-muted">
-                      {job.id} | {new Date(job.createdAt).toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="rounded-full bg-[#f8f5ef] px-4 py-2 text-sm font-semibold text-foreground">
-                    {formatStatusLabel(job.status)}
-                  </div>
-                </div>
+            jobs.map((job) => {
+              const primarySourceAsset = getJobPrimarySourceAsset(job, assetLookup);
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Type</p>
-                    <p className="mt-2 text-sm font-semibold">{job.type}</p>
-                  </div>
-                  <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Sources</p>
-                    <p className="mt-2 text-sm font-semibold">{job.sourceAssetIds.length}</p>
-                  </div>
-                  <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.16em] text-muted">Progress</p>
-                    <p className="mt-2 text-sm font-semibold">
-                      {formatJobProgress(job.progress) ?? "Waiting for update"}
-                    </p>
-                  </div>
-                </div>
+              return (
+                <article
+                  key={job.id}
+                  className="rounded-[1.2rem] border border-panel-border bg-white/84 p-3 shadow-sm"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    {primarySourceAsset ? (
+                      <AssetThumbnail asset={primarySourceAsset} />
+                    ) : (
+                      <div className="flex h-20 w-full items-center justify-center overflow-hidden rounded-[1rem] bg-[#181818] px-3 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70 sm:h-24 sm:w-36">
+                        Job
+                      </div>
+                    )}
 
-                <div className="mt-4 flex flex-wrap gap-3">
-                  {job.downloadUrl ? (
-                    <a
-                      href={toApiUrl(job.downloadUrl)}
-                      className="rounded-full border border-panel-border bg-white px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef]"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Download result
-                    </a>
-                  ) : null}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-foreground sm:text-base">
+                          {getJobTypeLabel(job.type)}
+                        </p>
+                        <span className="rounded-full bg-[#111111] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
+                          {formatStatusLabel(job.status)}
+                        </span>
+                      </div>
+
+                      <p className="mt-1 truncate text-sm text-foreground/80">
+                        {formatJobSourceLabel(job, assetLookup)}
+                      </p>
+
+                      <p className="mt-2 text-sm leading-6 text-muted">
+                        {formatJobCompactSummary(job, assetLookup)}
+                      </p>
+                    </div>
+
+                    <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-stretch">
+                      {job.downloadUrl ? (
+                        <a
+                          href={toApiUrl(job.downloadUrl)}
+                          className="rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef]"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Download result
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
 
                   {job.error ? (
-                    <p className="rounded-full bg-[#fff1ea] px-4 py-2 text-sm text-[#8f3b13]">
+                    <p className="mt-3 rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
                       {job.error}
                     </p>
                   ) : null}
-                </div>
-              </article>
-            ))
+                </article>
+              );
+            })
           ) : (
             <div className="rounded-[1.5rem] bg-white/72 p-5 text-sm leading-6 text-muted">
               No jobs queued yet. Open one function page, queue work there, then return here to watch the history.

@@ -1,8 +1,9 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { functionRouteOptions } from "@/lib/function-routes";
+import { functionRouteOptions, type FunctionView } from "@/lib/function-routes";
 
 function isActivePath(pathname: string, href: string) {
   if (href === "/") {
@@ -16,6 +17,9 @@ export function AppNav() {
   const pathname = usePathname();
   const activeFunction =
     functionRouteOptions.find((item) => pathname === item.href) ?? null;
+  const [isFunctionMenuOpen, setIsFunctionMenuOpen] = useState(false);
+  const [expandedFunctionView, setExpandedFunctionView] = useState<FunctionView | null>(null);
+  const functionMenuRef = useRef<HTMLDivElement | null>(null);
   const activeButtonClasses =
     "border-[#2f2f2f] bg-[#2f2f2f] text-[#f8f5ef] shadow-[0_12px_30px_rgba(17,17,17,0.14)]";
   const idleButtonClasses =
@@ -25,6 +29,27 @@ export function AppNav() {
   const isWorkspaceActive = isActivePath(pathname, "/");
   const isJobsActive = isActivePath(pathname, "/jobs");
   const isDocsActive = isActivePath(pathname, "/docs");
+
+  useEffect(() => {
+    setIsFunctionMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!isFunctionMenuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!functionMenuRef.current?.contains(event.target as Node)) {
+        setIsFunctionMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [isFunctionMenuOpen]);
 
   return (
     <nav className="flex flex-wrap items-center gap-2">
@@ -45,12 +70,18 @@ export function AppNav() {
         </span>
       </Link>
 
-      <details className="relative">
-        <summary
+      <div className="relative" ref={functionMenuRef}>
+        <button
+          type="button"
+          onClick={() => {
+            setIsFunctionMenuOpen((current) => !current);
+          }}
           className={`list-none rounded-full border px-4 py-2 text-sm font-semibold transition ${
             activeFunction ? activeButtonClasses : idleButtonClasses
-          } cursor-pointer`}
+          } flex items-center gap-2`}
           style={activeFunction ? activeTextStyle : idleTextStyle}
+          aria-expanded={isFunctionMenuOpen}
+          aria-haspopup="menu"
         >
           <span
             className={`relative z-10 ${
@@ -60,39 +91,99 @@ export function AppNav() {
           >
             {activeFunction ? `Function: ${activeFunction.shortLabel}` : "Function"}
           </span>
-        </summary>
+          <span
+            aria-hidden="true"
+            className={`text-xs transition ${isFunctionMenuOpen ? "rotate-180" : ""}`}
+          >
+            ▼
+          </span>
+        </button>
 
-        <div className="absolute right-0 top-[calc(100%+0.55rem)] z-40 min-w-64 rounded-[1.25rem] border border-panel-border bg-[rgba(255,255,255,0.96)] p-2 shadow-[0_24px_70px_rgba(17,17,17,0.12)] backdrop-blur-xl">
-          {functionRouteOptions.map((item) => (
-            <Link
-              key={item.view}
-              href={item.href}
-              style={pathname === item.href ? activeTextStyle : idleTextStyle}
-              className={`block rounded-[1rem] px-4 py-3 transition ${
-                pathname === item.href
-                  ? "bg-[#2f2f2f] text-[#f8f5ef]"
-                  : "hover:bg-[#f7f2e8]"
-              }`}
-            >
-              <p
-                className={`text-sm font-semibold ${
-                  pathname === item.href ? "!text-[#f8f5ef]" : "text-foreground"
-                }`}
-                style={pathname === item.href ? activeTextStyle : idleTextStyle}
-              >
-                {item.label}
+        {isFunctionMenuOpen ? (
+          <div className="absolute right-0 top-[calc(100%+0.55rem)] z-40 w-[min(92vw,42rem)] rounded-[1.25rem] border border-panel-border bg-[rgba(255,255,255,0.96)] p-3 shadow-[0_24px_70px_rgba(17,17,17,0.12)] backdrop-blur-xl">
+            <div className="px-2 pb-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                Functions
               </p>
-              <p
-                className={`mt-1 text-xs leading-5 ${
-                  pathname === item.href ? "!text-white/70" : "text-muted"
-                }`}
-              >
-                {item.description}
+              <p className="mt-1 text-xs leading-5 text-muted">
+                Choose a page directly. Use the small `i` button to open a short description without stretching the whole menu.
               </p>
-            </Link>
-          ))}
-        </div>
-      </details>
+            </div>
+
+            <div className="grid max-h-[70vh] gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+              {functionRouteOptions.map((item) => {
+                const isActive = pathname === item.href;
+                const isExpanded = expandedFunctionView === item.view;
+
+                return (
+                  <div
+                    key={item.view}
+                    className={`rounded-[1rem] border transition ${
+                      isActive
+                        ? "border-[#2f2f2f] bg-[#2f2f2f]"
+                        : "border-panel-border bg-white/80"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 px-3 py-3">
+                      <Link
+                        href={item.href}
+                        onClick={() => {
+                          setIsFunctionMenuOpen(false);
+                        }}
+                        className="min-w-0 flex-1 rounded-[0.85rem] focus:outline-none"
+                      >
+                        <p
+                          className={`truncate text-sm font-semibold ${
+                            isActive ? "!text-[#f8f5ef]" : "text-foreground"
+                          }`}
+                          style={isActive ? activeTextStyle : idleTextStyle}
+                        >
+                          {item.label}
+                        </p>
+                        <p
+                          className={`mt-1 text-[11px] uppercase tracking-[0.14em] ${
+                            isActive ? "!text-white/65" : "text-muted"
+                          }`}
+                        >
+                          {item.shortLabel}
+                        </p>
+                      </Link>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExpandedFunctionView((current) =>
+                            current === item.view ? null : item.view,
+                          );
+                        }}
+                        className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold transition ${
+                          isActive
+                            ? "border-white/15 bg-white/10 text-[#f8f5ef] hover:bg-white/14"
+                            : "border-panel-border bg-[#f7f2e8] text-foreground hover:bg-[#efe7d8]"
+                        }`}
+                        aria-expanded={isExpanded}
+                        aria-label={`Toggle description for ${item.label}`}
+                      >
+                        i
+                      </button>
+                    </div>
+
+                    {isExpanded ? (
+                      <p
+                        className={`px-3 pb-3 text-xs leading-5 ${
+                          isActive ? "text-white/70" : "text-muted"
+                        }`}
+                      >
+                        {item.description}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+      </div>
 
       <Link
         href="/jobs"
