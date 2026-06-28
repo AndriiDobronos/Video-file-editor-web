@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { functionRouteOptions, type FunctionView } from "@/lib/function-routes";
+import { getLocaleToggleLabel, useLanguage } from "@/i18n/language-provider";
 
 function isActivePath(pathname: string, href: string) {
   if (href === "/") {
@@ -15,6 +16,7 @@ function isActivePath(pathname: string, href: string) {
 
 export function AppNav() {
   const pathname = usePathname();
+  const { locale, setLocale, t, tf } = useLanguage();
   const activeFunction =
     functionRouteOptions.find((item) => pathname === item.href) ?? null;
   const [isFunctionMenuOpen, setIsFunctionMenuOpen] = useState(false);
@@ -66,7 +68,7 @@ export function AppNav() {
           }`}
           style={isWorkspaceActive ? activeTextStyle : idleTextStyle}
         >
-          Workspace
+          {t("Workspace")}
         </span>
       </Link>
 
@@ -89,13 +91,13 @@ export function AppNav() {
             }`}
             style={activeFunction ? activeTextStyle : idleTextStyle}
           >
-            {activeFunction ? activeFunction.shortLabel : "Function"}
+            {activeFunction ? t(activeFunction.shortLabel) : t("Function")}
           </span>
           <span
             aria-hidden="true"
             className={`text-xs transition ${isFunctionMenuOpen ? "rotate-180" : ""}`}
           >
-            ▼
+            ▾
           </span>
         </button>
 
@@ -103,10 +105,12 @@ export function AppNav() {
           <div className="absolute left-0 right-0 top-[calc(100%+0.55rem)] z-40 rounded-[1.25rem] border border-panel-border bg-[rgba(255,255,255,0.96)] p-3 shadow-[0_24px_70px_rgba(17,17,17,0.12)] backdrop-blur-xl md:left-auto md:right-0 md:w-[min(92vw,42rem)]">
             <div className="px-1 pb-3 sm:px-2">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
-                Functions
+                {t("Functions")}
               </p>
               <p className="mt-1 text-xs leading-5 text-muted">
-                Choose a page directly. Use the info button to open a short description without stretching the whole menu.
+                {t(
+                  "Choose a page directly. Use the info button to open a short description without stretching the whole menu.",
+                )}
               </p>
             </div>
 
@@ -138,14 +142,14 @@ export function AppNav() {
                           }`}
                           style={isActive ? activeTextStyle : idleTextStyle}
                         >
-                          {item.label}
+                          {t(item.label)}
                         </p>
                         <p
                           className={`mt-1 text-[11px] uppercase tracking-[0.14em] ${
                             isActive ? "!text-white/65" : "text-muted"
                           }`}
                         >
-                          {item.shortLabel}
+                          {t(item.shortLabel)}
                         </p>
                       </Link>
 
@@ -162,7 +166,7 @@ export function AppNav() {
                             : "border-panel-border bg-[#f7f2e8] text-foreground hover:bg-[#efe7d8]"
                         }`}
                         aria-expanded={isExpanded}
-                        aria-label={`Toggle description for ${item.label}`}
+                        aria-label={tf("Toggle description for {label}", { label: t(item.label) })}
                       >
                         i
                       </button>
@@ -174,7 +178,7 @@ export function AppNav() {
                           isActive ? "text-white/70" : "text-muted"
                         }`}
                       >
-                        {item.description}
+                        {t(item.description)}
                       </p>
                     ) : null}
                   </div>
@@ -183,6 +187,28 @@ export function AppNav() {
             </div>
           </div>
         ) : null}
+      </div>
+
+      <div className="col-span-2 inline-flex items-center rounded-full border border-panel-border bg-white/80 p-1 md:col-auto">
+        {(["en", "uk"] as const).map((nextLocale) => {
+          const isActive = locale === nextLocale;
+
+          return (
+            <button
+              key={nextLocale}
+              type="button"
+              onClick={() => {
+                setLocale(nextLocale);
+              }}
+              className={`rounded-full px-3 py-2 text-[13px] font-semibold transition sm:px-4 sm:text-sm ${
+                isActive ? "bg-[#2f2f2f] text-[#f8f5ef]" : "text-foreground hover:bg-white"
+              }`}
+              aria-label={`${t("Switch language")}: ${getLocaleToggleLabel(nextLocale)}`}
+            >
+              {nextLocale === "en" ? "EN" : "UA"}
+            </button>
+          );
+        })}
       </div>
 
       <Link
@@ -198,7 +224,7 @@ export function AppNav() {
           }`}
           style={isJobsActive ? activeTextStyle : idleTextStyle}
         >
-          Jobs
+          {t("Jobs")}
         </span>
       </Link>
 
@@ -215,7 +241,7 @@ export function AppNav() {
           }`}
           style={isDocsActive ? activeTextStyle : idleTextStyle}
         >
-          Docs
+          {t("Docs")}
         </span>
       </Link>
     </nav>

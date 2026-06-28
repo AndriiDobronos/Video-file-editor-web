@@ -1,7 +1,9 @@
-import Link from "next/link";
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { DM_Sans, Space_Grotesk } from "next/font/google";
-import { AppNav } from "@/components/app-nav";
+import { AppHeader } from "@/components/app-header";
+import { LanguageProvider } from "@/i18n/language-provider";
+import { DEFAULT_LOCALE, isLocale, LANGUAGE_COOKIE_NAME } from "@/i18n/translations";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -20,31 +22,25 @@ export const metadata: Metadata = {
     "A multi-page workspace for uploading files, choosing one editing function at a time, and exporting finished results.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const storedLocale = cookieStore.get(LANGUAGE_COOKIE_NAME)?.value;
+  const initialLocale = isLocale(storedLocale) ? storedLocale : DEFAULT_LOCALE;
+
   return (
     <html
-      lang="uk"
+      lang={initialLocale}
       className={`${dmSans.variable} ${spaceGrotesk.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <header className="sticky top-0 z-30 border-b border-panel-border bg-[rgba(244,239,228,0.88)] backdrop-blur-xl">
-          <div className="mx-auto flex w-full max-w-7xl flex-col items-start gap-3 px-5 py-4 sm:px-8 md:flex-row md:items-center md:justify-between lg:px-10">
-            <Link
-              href="/"
-              className="font-display text-base font-semibold leading-tight tracking-tight text-foreground sm:text-lg"
-            >
-              Video File Editor
-            </Link>
-
-            <AppNav />
-          </div>
-        </header>
-
-        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+        <LanguageProvider initialLocale={initialLocale}>
+          <AppHeader />
+          <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+        </LanguageProvider>
       </body>
     </html>
   );

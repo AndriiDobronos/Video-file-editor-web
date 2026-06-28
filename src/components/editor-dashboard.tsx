@@ -1,7 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useEffect,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
+import { useLanguage, type TemplateFn, type TranslateFn } from "@/i18n/language-provider";
 import { fetchJson, toApiUrl, waitForBackendWake } from "@/lib/api";
 import {
   editorViewMeta,
@@ -70,6 +79,30 @@ type AssetMetadataResponse = {
   };
   message?: string;
 };
+
+type EditorLocale = "en" | "uk";
+
+function translateReactTree(node: ReactNode, t: TranslateFn): ReactNode {
+  if (typeof node === "string") {
+    return t(node);
+  }
+
+  if (!isValidElement(node)) {
+    return node;
+  }
+
+  const props = node.props as { children?: ReactNode };
+
+  if (props.children === undefined) {
+    return node;
+  }
+
+  return cloneElement(
+    node,
+    undefined,
+    Children.map(props.children, (child) => translateReactTree(child, t)),
+  );
+}
 
 const statusHighlights = [
   "Shared uploads stay available on every function page",
@@ -491,9 +524,9 @@ const sessionStorageKeys = {
   convertBackground: "vfe:convert-background",
 } as const;
 
-function formatBytes(bytes: number | null | undefined) {
+function formatBytes(bytes: number | null | undefined, t: TranslateFn) {
   if (!bytes || Number.isNaN(bytes)) {
-    return "Unknown size";
+    return t("Unknown size");
   }
 
   const units = ["B", "KB", "MB", "GB"];
@@ -508,9 +541,9 @@ function formatBytes(bytes: number | null | undefined) {
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
-function formatDuration(seconds: number | null | undefined) {
+function formatDuration(seconds: number | null | undefined, t: TranslateFn) {
   if (seconds === null || seconds === undefined || Number.isNaN(seconds)) {
-    return "Unknown duration";
+    return t("Unknown duration");
   }
 
   const totalSeconds = Math.max(0, Math.round(seconds));
@@ -545,22 +578,22 @@ function formatCodecLabel(asset: MediaAsset) {
   return codecs.join(" / ");
 }
 
-function formatAssetSummary(asset: MediaAsset) {
+function formatAssetSummary(asset: MediaAsset, t: TranslateFn) {
   const details = [
     asset.metadata?.durationSeconds !== null && asset.metadata?.durationSeconds !== undefined
-      ? formatDuration(asset.metadata.durationSeconds)
+      ? formatDuration(asset.metadata.durationSeconds, t)
       : null,
     formatResolutionLabel(asset),
     formatCodecLabel(asset),
-    formatBytes(asset.sizeBytes),
+    formatBytes(asset.sizeBytes, t),
   ].filter((value): value is string => Boolean(value));
 
   return details.join(" | ");
 }
 
-function formatBitRate(bitsPerSecond: number | null | undefined) {
+function formatBitRate(bitsPerSecond: number | null | undefined, t: TranslateFn) {
   if (!bitsPerSecond || Number.isNaN(bitsPerSecond)) {
-    return "Unknown bitrate";
+    return t("Unknown bitrate");
   }
 
   if (bitsPerSecond >= 1_000_000) {
@@ -570,9 +603,9 @@ function formatBitRate(bitsPerSecond: number | null | undefined) {
   return `${Math.round(bitsPerSecond / 1000)} kbps`;
 }
 
-function formatFrameRateLabel(value: string | null | undefined) {
+function formatFrameRateLabel(value: string | null | undefined, t: TranslateFn) {
   if (!value) {
-    return "Unknown frame rate";
+    return t("Unknown frame rate");
   }
 
   const [numerator, denominator] = value.split("/");
@@ -600,31 +633,37 @@ function formatFrameRateLabel(value: string | null | undefined) {
   return value;
 }
 
-function formatMetadataTimestamp(value: string | null | undefined) {
+function formatMetadataTimestamp(
+  value: string | null | undefined,
+  locale: EditorLocale,
+  t: TranslateFn,
+) {
   if (!value) {
-    return "Unknown";
+    return t("Unknown");
   }
 
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString(locale === "uk" ? "uk-UA" : "en-US");
 }
 
-function formatStatusLabel(status: ProcessingJob["status"]) {
+function formatStatusLabel(status: ProcessingJob["status"], t: TranslateFn) {
   switch (status) {
     case "queued":
-      return "Queued";
+      return t("Queued");
     case "processing":
-      return "Processing";
+      return t("Processing");
     case "completed":
-      return "Completed";
+      return t("Completed");
     case "failed":
-      return "Failed";
+      return t("Failed");
     default:
       return status;
   }
 }
 
-function formatJobProgress(progress: ProcessingJob["progress"]) {
+function formatJobProgress(progress: ProcessingJob["progress"], t: TranslateFn) {
   if (typeof progress === "number") {
     return `${Math.round(progress)}%`;
   }
@@ -634,7 +673,7 @@ function formatJobProgress(progress: ProcessingJob["progress"]) {
   }
 
   if (progress === true) {
-    return "Running";
+    return t("Running");
   }
 
   return null;
@@ -650,6 +689,8 @@ function getJobPrimarySourceAsset(
 function formatJobSourceLabel(
   job: ProcessingJob,
   assetLookup: Map<string, MediaAsset>,
+  tf: TemplateFn,
+  t: TranslateFn,
 ) {
   const sourceNames = job.sourceAssetIds
     .map((assetId) => assetLookup.get(assetId)?.originalName ?? null)
@@ -657,20 +698,26 @@ function formatJobSourceLabel(
 
   if (sourceNames.length === 0) {
     return job.sourceAssetIds.length === 1
-      ? "Source file is no longer available in the shared library"
-      : `${job.sourceAssetIds.length} queued source files`;
+      ? t("Source file is no longer available in the shared library")
+      : tf("{count} queued source files", { count: job.sourceAssetIds.length });
   }
 
   if (sourceNames.length === 1) {
     return sourceNames[0];
   }
 
-  return `${sourceNames[0]} +${sourceNames.length - 1} more`;
+  return tf("{name} +{count} more", {
+    name: sourceNames[0],
+    count: sourceNames.length - 1,
+  });
 }
 
 function formatJobCompactSummary(
   job: ProcessingJob,
   assetLookup: Map<string, MediaAsset>,
+  locale: EditorLocale,
+  t: TranslateFn,
+  tf: TemplateFn,
 ) {
   const outputAsset = job.outputAssetId ? assetLookup.get(job.outputAssetId) ?? null : null;
   const subtitleFileName =
@@ -681,11 +728,11 @@ function formatJobCompactSummary(
       : null;
   const details = [
     `#${job.id.slice(0, 8)}`,
-    new Date(job.createdAt).toLocaleString(),
+    new Date(job.createdAt).toLocaleString(locale === "uk" ? "uk-UA" : "en-US"),
     `${job.sourceAssetIds.length} src`,
-    formatJobProgress(job.progress) ?? formatStatusLabel(job.status),
+    formatJobProgress(job.progress, t) ?? formatStatusLabel(job.status, t),
     subtitleFileName ? `SRT: ${subtitleFileName}` : null,
-    outputAsset ? outputAsset.originalName : job.outputAssetId ? "Result ready" : null,
+    outputAsset ? outputAsset.originalName : job.outputAssetId ? t("Result ready") : null,
   ].filter((value): value is string => Boolean(value));
 
   return details.join(" / ");
@@ -2494,6 +2541,8 @@ function AssetThumbnail({
   asset: MediaAsset;
   compact?: boolean;
 }) {
+  const { t } = useLanguage();
+
   return (
     <div
       className={
@@ -2505,7 +2554,7 @@ function AssetThumbnail({
       {asset.thumbnailUrl ? (
         <img
           src={toApiUrl(asset.thumbnailUrl)}
-          alt={`${asset.originalName} preview`}
+          alt={`${asset.originalName} ${t("preview")}`}
           className="h-full w-full object-cover"
           loading="lazy"
         />
@@ -2517,7 +2566,7 @@ function AssetThumbnail({
               : "flex h-full w-full items-center justify-center bg-[#181818] px-3 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70"
           }
         >
-          {asset.kind}
+          {t(asset.kind)}
         </div>
       )}
     </div>
@@ -2537,6 +2586,8 @@ function SelectableAssetCard({
   inputName?: string;
   onSelect: () => void;
 }) {
+  const { t } = useLanguage();
+
   return (
     <label className="flex min-w-0 items-start gap-3 overflow-hidden rounded-[1.25rem] border border-panel-border bg-white/78 px-3 py-3 sm:items-center">
       <input
@@ -2554,7 +2605,7 @@ function SelectableAssetCard({
           </p>
           {selected ? (
             <span className="rounded-full bg-[#111111] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
-              Selected
+              {t("Selected")}
             </span>
           ) : null}
         </div>
@@ -2562,7 +2613,7 @@ function SelectableAssetCard({
           {asset.metadata?.formatName ?? asset.mimeType}
         </p>
         <p className="mt-1 break-words text-xs leading-5 text-muted">
-          {formatAssetSummary(asset)}
+          {formatAssetSummary(asset, t)}
         </p>
       </div>
     </label>
@@ -2578,17 +2629,19 @@ function PanelHeader({
   title: string;
   badge?: string;
 }) {
+  const { t } = useLanguage();
+
   return (
     <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
         <p className="font-display text-sm font-semibold uppercase tracking-[0.24em] text-muted">
-          {eyebrow}
+          {t(eyebrow)}
         </p>
-        <h2 className="mt-3 break-words text-2xl font-semibold">{title}</h2>
+        <h2 className="mt-3 break-words text-2xl font-semibold">{t(title)}</h2>
       </div>
       {badge ? (
         <div className="shrink-0 self-start rounded-full bg-accent-soft px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#8f3b13]">
-          {badge}
+          {t(badge)}
         </div>
       ) : null}
     </div>
@@ -2600,6 +2653,7 @@ export function EditorDashboard({
 }: {
   activeView?: EditorView;
 }) {
+  const { locale, t, tf } = useLanguage();
   const activeRouteChipClasses =
     "border-[#2f2f2f] bg-[#2f2f2f] text-[#f8f5ef] shadow-[0_12px_30px_rgba(17,17,17,0.14)]";
   const idleRouteChipClasses =
@@ -6886,7 +6940,7 @@ export function EditorDashboard({
                       {selectedSubtitleBurnInAsset.originalName}
                     </p>
                     <p className="mt-1 text-xs leading-5 text-muted">
-                      {formatAssetSummary(selectedSubtitleBurnInAsset)}
+                      {formatAssetSummary(selectedSubtitleBurnInAsset, t)}
                     </p>
                   </div>
                 </div>
@@ -7037,7 +7091,7 @@ export function EditorDashboard({
                       {selectedTransitionPrimaryAsset.originalName}
                     </p>
                     <p className="mt-1 text-xs leading-5 text-muted">
-                      {formatAssetSummary(selectedTransitionPrimaryAsset)}
+                      {formatAssetSummary(selectedTransitionPrimaryAsset, t)}
                     </p>
                   </div>
                 </div>
@@ -7056,7 +7110,7 @@ export function EditorDashboard({
                       {selectedTransitionSecondaryAsset.originalName}
                     </p>
                     <p className="mt-1 text-xs leading-5 text-muted">
-                      {formatAssetSummary(selectedTransitionSecondaryAsset)}
+                      {formatAssetSummary(selectedTransitionSecondaryAsset, t)}
                     </p>
                   </div>
                 </div>
@@ -7885,15 +7939,19 @@ export function EditorDashboard({
                   </div>
                   <div className="rounded-[1.25rem] bg-white px-4 py-4 shadow-sm">
                     <p className="text-xs uppercase tracking-[0.16em] text-muted">Duration</p>
-                    <p className="mt-2 text-sm font-semibold">{formatDuration(resolvedDuration)}</p>
+                    <p className="mt-2 text-sm font-semibold">
+                      {formatDuration(resolvedDuration, t)}
+                    </p>
                   </div>
                   <div className="rounded-[1.25rem] bg-white px-4 py-4 shadow-sm">
                     <p className="text-xs uppercase tracking-[0.16em] text-muted">Size</p>
-                    <p className="mt-2 text-sm font-semibold">{formatBytes(resolvedSize)}</p>
+                    <p className="mt-2 text-sm font-semibold">{formatBytes(resolvedSize, t)}</p>
                   </div>
                   <div className="rounded-[1.25rem] bg-white px-4 py-4 shadow-sm">
                     <p className="text-xs uppercase tracking-[0.16em] text-muted">Bitrate</p>
-                    <p className="mt-2 text-sm font-semibold">{formatBitRate(resolvedBitRate)}</p>
+                    <p className="mt-2 text-sm font-semibold">
+                      {formatBitRate(resolvedBitRate, t)}
+                    </p>
                   </div>
                 </div>
 
@@ -7917,7 +7975,11 @@ export function EditorDashboard({
                   <div className="rounded-[1.25rem] bg-white px-4 py-4 shadow-sm">
                     <p className="text-xs uppercase tracking-[0.16em] text-muted">Inspected at</p>
                     <p className="mt-2 text-sm font-semibold">
-                      {formatMetadataTimestamp(metadataInspection.inspectedAt)}
+                      {formatMetadataTimestamp(
+                        metadataInspection.inspectedAt,
+                        locale as EditorLocale,
+                        t,
+                      )}
                     </p>
                   </div>
                 </div>
@@ -7925,7 +7987,8 @@ export function EditorDashboard({
                 <div className="rounded-[1.5rem] border border-panel-border bg-white/80 p-4">
                   <p className="text-xs uppercase tracking-[0.16em] text-muted">Summary</p>
                   <p className="mt-2 text-sm leading-6 text-foreground">
-                    {formatAssetSummary(selectedMetadataInspectionAsset) || "Summary is unavailable."}
+                    {formatAssetSummary(selectedMetadataInspectionAsset, t) ||
+                      "Summary is unavailable."}
                   </p>
                 </div>
 
@@ -7980,7 +8043,7 @@ export function EditorDashboard({
                             <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
                               <p className="text-xs uppercase tracking-[0.16em] text-muted">Bitrate</p>
                               <p className="mt-2 text-sm font-semibold">
-                                {formatBitRate(stream.bitRate)}
+                                {formatBitRate(stream.bitRate, t)}
                               </p>
                             </div>
                             <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
@@ -7988,6 +8051,7 @@ export function EditorDashboard({
                               <p className="mt-2 text-sm font-semibold">
                                 {formatFrameRateLabel(
                                   stream.averageFrameRate ?? stream.frameRate,
+                                  t,
                                 )}
                               </p>
                             </div>
@@ -8101,16 +8165,22 @@ export function EditorDashboard({
                           {getJobTypeLabel(job.type)}
                         </p>
                         <span className="rounded-full bg-[#111111] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
-                          {formatStatusLabel(job.status)}
+                          {formatStatusLabel(job.status, t)}
                         </span>
                       </div>
 
                       <p className="mt-1 break-words text-sm text-foreground/80">
-                        {formatJobSourceLabel(job, assetLookup)}
+                        {formatJobSourceLabel(job, assetLookup, tf, t)}
                       </p>
 
                       <p className="mt-2 break-words text-xs leading-5 text-muted sm:text-sm sm:leading-6">
-                        {formatJobCompactSummary(job, assetLookup)}
+                        {formatJobCompactSummary(
+                          job,
+                          assetLookup,
+                          locale as EditorLocale,
+                          t,
+                          tf,
+                        )}
                       </p>
                     </div>
 
@@ -8253,7 +8323,7 @@ export function EditorDashboard({
     return renderWorkspaceOverviewPanel();
   }
 
-  return (
+  const content = (
     <>
       <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 overflow-x-hidden px-5 py-6 sm:px-8 lg:px-10">
       <section className="glass-panel overflow-hidden rounded-[2rem]">
@@ -8544,7 +8614,7 @@ export function EditorDashboard({
                     </p>
 
                     <p className="mt-2 break-words text-sm leading-6 text-muted">
-                      {formatAssetSummary(asset)}
+                      {formatAssetSummary(asset, t)}
                     </p>
                   </div>
 
@@ -8607,4 +8677,6 @@ export function EditorDashboard({
       {renderMetadataInspectionModal()}
     </>
   );
+
+  return locale === "uk" ? translateReactTree(content, t) : content;
 }
