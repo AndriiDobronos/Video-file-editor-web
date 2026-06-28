@@ -1,6 +1,6 @@
 # Video File Editor Web
 
-Video File Editor Web is the user-facing workspace for uploading, compressing, extracting frames, trimming, normalizing, crop/pad editing, converting, merging, and downloading media files.
+Video File Editor Web is the user-facing workspace for uploading, compressing, extracting frames, adding text overlays, trimming, normalizing, crop/pad editing, converting, merging, and downloading media files.
 
 ## What users can do
 
@@ -8,9 +8,10 @@ Video File Editor Web is the user-facing workspace for uploading, compressing, e
 - Review duration, resolution, size, and codec details before export
 - Compress a video with preset or advanced quality controls
 - Extract one frame from a video as PNG, JPEG, or WebP
+- Burn a title, caption, or short note directly into a video export
 - Trim a clip to an exact time range
 - Normalize clips when merge is blocked by mismatched formats
-- Crop a frame tighter or pad it onto a larger canvas
+- Crop or pad either a video frame or a supported still image
 - Convert PNG, JPEG, and WebP files into another still-image format
 - Merge prepared clips into one final video
 - Regenerate preview thumbnails for uploaded or processed media
@@ -22,10 +23,11 @@ Video File Editor Web is the user-facing workspace for uploading, compressing, e
 2. Review the file details shown in the asset list.
 3. Use `Compress video` when you need a smaller or cleaner MP4 export.
 4. Use `Extract frame` when you need a still image from a clip.
-5. Trim any clip that needs a shorter export.
-6. Use `Crop / pad frame` when you need to reshape the canvas before the next step.
-7. If merge is blocked, run `Normalize for merge` with the preset that fits your goal.
-8. Merge the prepared clips or convert supported images.
+5. Use `Add text overlay` when you need a burned-in title, caption, or note.
+6. Trim any clip that needs a shorter export.
+7. Use `Crop / pad frame` when you need to reshape the canvas before the next step.
+8. If merge is blocked, run `Normalize for merge` with the preset that fits your goal.
+9. Merge the prepared clips or convert supported images.
 9. Download the finished result from the processing history.
 
 ## Normalize presets
