@@ -682,13 +682,13 @@ function formatJobCompactSummary(
   const details = [
     `#${job.id.slice(0, 8)}`,
     new Date(job.createdAt).toLocaleString(),
-    `${job.sourceAssetIds.length} source${job.sourceAssetIds.length === 1 ? "" : "s"}`,
+    `${job.sourceAssetIds.length} src`,
     formatJobProgress(job.progress) ?? formatStatusLabel(job.status),
     subtitleFileName ? `SRT: ${subtitleFileName}` : null,
     outputAsset ? outputAsset.originalName : job.outputAssetId ? "Result ready" : null,
   ].filter((value): value is string => Boolean(value));
 
-  return details.join(" | ");
+  return details.join(" / ");
 }
 
 function isImageAsset(asset: MediaAsset) {
@@ -8084,7 +8084,7 @@ export function EditorDashboard({
               return (
                 <article
                   key={job.id}
-                  className="rounded-[1.2rem] border border-panel-border bg-white/84 p-3 shadow-sm"
+                  className="overflow-hidden rounded-[1.2rem] border border-panel-border bg-white/84 p-3 shadow-sm"
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                     {primarySourceAsset ? (
@@ -8097,7 +8097,7 @@ export function EditorDashboard({
 
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-semibold text-foreground sm:text-base">
+                        <p className="break-words text-sm font-semibold text-foreground sm:text-base">
                           {getJobTypeLabel(job.type)}
                         </p>
                         <span className="rounded-full bg-[#111111] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
@@ -8105,20 +8105,20 @@ export function EditorDashboard({
                         </span>
                       </div>
 
-                      <p className="mt-1 truncate text-sm text-foreground/80">
+                      <p className="mt-1 break-words text-sm text-foreground/80">
                         {formatJobSourceLabel(job, assetLookup)}
                       </p>
 
-                      <p className="mt-2 text-sm leading-6 text-muted">
+                      <p className="mt-2 break-words text-xs leading-5 text-muted sm:text-sm sm:leading-6">
                         {formatJobCompactSummary(job, assetLookup)}
                       </p>
                     </div>
 
-                    <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-stretch">
+                    <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-col sm:items-stretch">
                       {job.downloadUrl ? (
                         <a
                           href={toApiUrl(job.downloadUrl)}
-                          className="rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef]"
+                          className="w-full rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef] sm:w-auto"
                           target="_blank"
                           rel="noreferrer"
                         >
@@ -8132,7 +8132,7 @@ export function EditorDashboard({
                             void handleDeleteJobHistory(job);
                           }}
                           disabled={isDeletingHistory}
-                          className="rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef] disabled:cursor-not-allowed disabled:opacity-60"
+                          className="w-full rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                         >
                           {isDeletingHistory ? "Deleting..." : "Delete history"}
                         </button>
@@ -8141,7 +8141,7 @@ export function EditorDashboard({
                   </div>
 
                   {job.error ? (
-                    <p className="mt-3 rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
+                    <p className="mt-3 break-words rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
                       {job.error}
                     </p>
                   ) : null}
