@@ -52,10 +52,10 @@ export function AppNav() {
   }, [isFunctionMenuOpen]);
 
   return (
-    <nav className="flex flex-wrap items-center gap-2">
+    <nav className="grid w-full grid-cols-2 gap-2 md:flex md:w-auto md:flex-wrap md:justify-end">
       <Link
         href="/"
-        className={`relative rounded-full border px-4 py-2 text-sm font-semibold transition ${
+        className={`relative inline-flex items-center justify-center whitespace-nowrap rounded-full border px-3.5 py-2 text-[13px] font-semibold transition sm:px-4 sm:text-sm ${
           isWorkspaceActive ? activeButtonClasses : idleButtonClasses
         }`}
         style={isWorkspaceActive ? activeTextStyle : idleTextStyle}
@@ -70,26 +70,26 @@ export function AppNav() {
         </span>
       </Link>
 
-      <div className="relative" ref={functionMenuRef}>
+      <div className="relative col-span-2 md:col-auto" ref={functionMenuRef}>
         <button
           type="button"
           onClick={() => {
             setIsFunctionMenuOpen((current) => !current);
           }}
-          className={`list-none rounded-full border px-4 py-2 text-sm font-semibold transition ${
+          className={`flex w-full list-none items-center justify-center gap-2 rounded-full border px-3.5 py-2 text-[13px] font-semibold transition sm:px-4 sm:text-sm ${
             activeFunction ? activeButtonClasses : idleButtonClasses
-          } flex items-center gap-2`}
+          }`}
           style={activeFunction ? activeTextStyle : idleTextStyle}
           aria-expanded={isFunctionMenuOpen}
           aria-haspopup="menu"
         >
           <span
-            className={`relative z-10 ${
+            className={`relative z-10 max-w-[11rem] truncate ${
               activeFunction ? "!text-[#f8f5ef]" : "text-foreground"
             }`}
             style={activeFunction ? activeTextStyle : idleTextStyle}
           >
-            {activeFunction ? `Function: ${activeFunction.shortLabel}` : "Function"}
+            {activeFunction ? activeFunction.shortLabel : "Function"}
           </span>
           <span
             aria-hidden="true"
@@ -100,13 +100,13 @@ export function AppNav() {
         </button>
 
         {isFunctionMenuOpen ? (
-          <div className="absolute right-0 top-[calc(100%+0.55rem)] z-40 w-[min(92vw,42rem)] rounded-[1.25rem] border border-panel-border bg-[rgba(255,255,255,0.96)] p-3 shadow-[0_24px_70px_rgba(17,17,17,0.12)] backdrop-blur-xl">
-            <div className="px-2 pb-3">
+          <div className="absolute left-0 right-0 top-[calc(100%+0.55rem)] z-40 rounded-[1.25rem] border border-panel-border bg-[rgba(255,255,255,0.96)] p-3 shadow-[0_24px_70px_rgba(17,17,17,0.12)] backdrop-blur-xl md:left-auto md:right-0 md:w-[min(92vw,42rem)]">
+            <div className="px-1 pb-3 sm:px-2">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
                 Functions
               </p>
               <p className="mt-1 text-xs leading-5 text-muted">
-                Choose a page directly. Use the small `i` button to open a short description without stretching the whole menu.
+                Choose a page directly. Use the info button to open a short description without stretching the whole menu.
               </p>
             </div>
 
@@ -133,7 +133,7 @@ export function AppNav() {
                         className="min-w-0 flex-1 rounded-[0.85rem] focus:outline-none"
                       >
                         <p
-                          className={`truncate text-sm font-semibold ${
+                          className={`break-words text-sm font-semibold leading-5 ${
                             isActive ? "!text-[#f8f5ef]" : "text-foreground"
                           }`}
                           style={isActive ? activeTextStyle : idleTextStyle}
@@ -187,7 +187,7 @@ export function AppNav() {
 
       <Link
         href="/jobs"
-        className={`relative rounded-full border px-4 py-2 text-sm font-semibold transition ${
+        className={`relative inline-flex items-center justify-center whitespace-nowrap rounded-full border px-3.5 py-2 text-[13px] font-semibold transition sm:px-4 sm:text-sm ${
           isJobsActive ? activeButtonClasses : idleButtonClasses
         }`}
         style={isJobsActive ? activeTextStyle : idleTextStyle}
@@ -204,7 +204,7 @@ export function AppNav() {
 
       <Link
         href="/docs"
-        className={`relative rounded-full border px-4 py-2 text-sm font-semibold transition ${
+        className={`relative inline-flex items-center justify-center whitespace-nowrap rounded-full border px-3.5 py-2 text-[13px] font-semibold transition sm:px-4 sm:text-sm ${
           isDocsActive ? activeButtonClasses : idleButtonClasses
         }`}
         style={isDocsActive ? activeTextStyle : idleTextStyle}

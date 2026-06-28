@@ -2538,7 +2538,7 @@ function SelectableAssetCard({
   onSelect: () => void;
 }) {
   return (
-    <label className="flex items-center gap-3 rounded-[1.25rem] border border-panel-border bg-white/78 px-3 py-3">
+    <label className="flex min-w-0 items-start gap-3 overflow-hidden rounded-[1.25rem] border border-panel-border bg-white/78 px-3 py-3 sm:items-center">
       <input
         type={inputType}
         name={inputName}
@@ -2549,17 +2549,21 @@ function SelectableAssetCard({
       <AssetThumbnail asset={asset} compact />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="truncate text-sm font-semibold text-foreground">{asset.originalName}</p>
+          <p className="min-w-0 break-words text-sm font-semibold text-foreground">
+            {asset.originalName}
+          </p>
           {selected ? (
             <span className="rounded-full bg-[#111111] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
               Selected
             </span>
           ) : null}
         </div>
-        <p className="mt-1 truncate text-[11px] uppercase tracking-[0.14em] text-muted">
+        <p className="mt-1 break-all text-[11px] uppercase tracking-[0.14em] text-muted">
           {asset.metadata?.formatName ?? asset.mimeType}
         </p>
-        <p className="mt-1 text-xs leading-5 text-muted">{formatAssetSummary(asset)}</p>
+        <p className="mt-1 break-words text-xs leading-5 text-muted">
+          {formatAssetSummary(asset)}
+        </p>
       </div>
     </label>
   );
@@ -2575,15 +2579,15 @@ function PanelHeader({
   badge?: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4">
-      <div>
+    <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">
         <p className="font-display text-sm font-semibold uppercase tracking-[0.24em] text-muted">
           {eyebrow}
         </p>
-        <h2 className="mt-3 text-2xl font-semibold">{title}</h2>
+        <h2 className="mt-3 break-words text-2xl font-semibold">{title}</h2>
       </div>
       {badge ? (
-        <div className="rounded-full bg-accent-soft px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#8f3b13]">
+        <div className="shrink-0 self-start rounded-full bg-accent-soft px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#8f3b13]">
           {badge}
         </div>
       ) : null}
@@ -7773,13 +7777,13 @@ export function EditorDashboard({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
               <p className="text-xs uppercase tracking-[0.16em] text-muted">Source</p>
-              <p className="mt-2 text-sm font-semibold">
+              <p className="mt-2 break-words text-sm font-semibold">
                 {selectedConvertAsset?.originalName ?? "Choose an image"}
               </p>
             </div>
             <div className="rounded-2xl bg-[#f8f5ef] px-4 py-3">
               <p className="text-xs uppercase tracking-[0.16em] text-muted">Target summary</p>
-              <p className="mt-2 text-sm font-semibold">
+              <p className="mt-2 break-words text-sm font-semibold">
                 {formatConvertTargetSummary(convertTargetPlan.target)}
               </p>
             </div>
@@ -8251,7 +8255,7 @@ export function EditorDashboard({
 
   return (
     <>
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-5 py-6 sm:px-8 lg:px-10">
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 overflow-x-hidden px-5 py-6 sm:px-8 lg:px-10">
       <section className="glass-panel overflow-hidden rounded-[2rem]">
         <div className="grid gap-6 px-6 py-7 sm:px-8 lg:grid-cols-[1.2fr_0.9fr] lg:px-10">
           <div className="space-y-6">
@@ -8264,15 +8268,15 @@ export function EditorDashboard({
               <p className="font-display text-sm font-semibold uppercase tracking-[0.28em] text-muted">
                 {currentViewMeta.label}
               </p>
-              <h1 className="max-w-3xl font-display text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
+              <h1 className="max-w-3xl font-display text-3xl font-semibold leading-tight tracking-tight sm:text-4xl lg:text-5xl">
                 Choose one file action, open the right page, and stay focused on that job only.
               </h1>
-              <p className="max-w-3xl text-base leading-8 text-muted sm:text-lg">
+              <p className="max-w-3xl text-sm leading-7 text-muted sm:text-lg sm:leading-8">
                 {currentViewMeta.description}
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
               {functionRouteOptions.map((item) => {
                 const isActive = activeView === item.view;
 
@@ -8280,7 +8284,7 @@ export function EditorDashboard({
                   <Link
                     key={item.view}
                     href={item.href}
-                    className={`relative rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                    className={`relative shrink-0 whitespace-nowrap rounded-full border px-3.5 py-2 text-[13px] font-semibold transition sm:px-4 sm:text-sm ${
                       isActive ? activeRouteChipClasses : idleRouteChipClasses
                     }`}
                     style={isActive ? activeRouteTextStyle : idleRouteTextStyle}
@@ -8299,7 +8303,7 @@ export function EditorDashboard({
 
               <Link
                 href="/jobs"
-                className={`relative rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                className={`relative shrink-0 whitespace-nowrap rounded-full border px-3.5 py-2 text-[13px] font-semibold transition sm:px-4 sm:text-sm ${
                   activeView === "jobs"
                     ? activeRouteChipClasses
                     : idleRouteChipClasses
@@ -8324,7 +8328,7 @@ export function EditorDashboard({
 
           <div className="rounded-[1.75rem] bg-[#111111] p-4 text-white shadow-[0_30px_80px_rgba(17,17,17,0.22)]">
             <div className="rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
-              <div className="mb-4 flex items-center justify-between gap-4">
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-sm uppercase tracking-[0.22em] text-white/45">
                     Workspace status
@@ -8336,7 +8340,7 @@ export function EditorDashboard({
                     {workspaceStatusDescription}
                   </p>
                 </div>
-                <div className="rounded-full bg-[#ff6b2c] px-3 py-1 text-xs font-semibold text-black">
+                <div className="self-start rounded-full bg-[#ff6b2c] px-3 py-1 text-xs font-semibold text-black">
                   {workspaceStatusBadge}
                 </div>
               </div>
@@ -8353,7 +8357,7 @@ export function EditorDashboard({
                 ))}
               </div>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div className="rounded-2xl bg-white px-4 py-3 text-black">
                   <p className="text-xs uppercase tracking-[0.2em] text-black/45">Assets</p>
                   <p className="mt-2 text-lg font-semibold">{assetsCountDisplay}</p>
@@ -8362,7 +8366,7 @@ export function EditorDashboard({
                   <p className="text-xs uppercase tracking-[0.2em] text-white/45">Jobs</p>
                   <p className="mt-2 text-lg font-semibold">{jobsCountDisplay}</p>
                 </div>
-                <div className="rounded-2xl bg-white/10 px-4 py-3">
+                <div className="col-span-2 rounded-2xl bg-white/10 px-4 py-3 sm:col-span-1">
                   <p className="text-xs uppercase tracking-[0.2em] text-white/45">Polling</p>
                   <p className="mt-2 text-lg font-semibold">
                     {hasProcessingJobs || isRefreshing || isWorkspaceInitializing
@@ -8377,16 +8381,16 @@ export function EditorDashboard({
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[0.88fr_1.12fr]">
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
           <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
             <PanelHeader
               eyebrow="Current feedback"
               title="Shared workspace notes"
               badge="Shared"
             />
-            <p className="mt-5 text-sm leading-7 text-muted">{feedback}</p>
+            <p className="mt-5 break-words text-sm leading-7 text-muted">{feedback}</p>
             {errorMessage ? (
-              <p className="mt-4 rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
+              <p className="mt-4 break-words rounded-2xl bg-[#fff1ea] px-4 py-3 text-sm text-[#8f3b13]">
                 {errorMessage}
               </p>
             ) : null}
@@ -8408,7 +8412,7 @@ export function EditorDashboard({
                 onChange={(event) => {
                   setSelectedFiles(Array.from(event.target.files ?? []));
                 }}
-                className="block w-full text-sm text-muted file:mr-4 file:rounded-full file:border-0 file:bg-foreground file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white"
+                className="block w-full max-w-full text-sm text-muted file:mb-3 file:mr-0 file:block file:w-full file:rounded-full file:border-0 file:bg-foreground file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white sm:file:mb-0 sm:file:mr-4 sm:file:w-auto"
               />
 
               <div className="mt-4 flex flex-wrap gap-2">
@@ -8416,7 +8420,7 @@ export function EditorDashboard({
                   selectedFiles.map((file) => (
                     <span
                       key={`${file.name}-${file.lastModified}`}
-                      className="rounded-full bg-white px-3 py-2 text-xs font-medium text-foreground shadow-sm"
+                      className="max-w-full break-all rounded-full bg-white px-3 py-2 text-xs font-medium text-foreground shadow-sm"
                     >
                       {file.name}
                     </span>
@@ -8440,17 +8444,17 @@ export function EditorDashboard({
           </section>
         </div>
 
-        {renderActivePanel()}
+        <div className="min-w-0">{renderActivePanel()}</div>
       </section>
 
       <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
-        <div className="flex items-center justify-between gap-4">
-          <div>
+        <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
             <p className="font-display text-sm font-semibold uppercase tracking-[0.24em] text-muted">
               Shared asset library
             </p>
-            <h2 className="mt-3 text-2xl font-semibold">Uploads and generated outputs</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
+            <h2 className="mt-3 break-words text-2xl font-semibold">Uploads and generated outputs</h2>
+            <p className="mt-2 max-w-3xl break-words text-sm leading-6 text-muted">
               {assetLibraryScope.description}
             </p>
           </div>
@@ -8460,7 +8464,7 @@ export function EditorDashboard({
               void handleRefresh();
             }}
             disabled={isLibraryRefreshing}
-            className="inline-flex items-center gap-2 rounded-full border border-panel-border bg-white/80 px-4 py-2 text-sm font-semibold text-foreground transition disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-panel-border bg-white/80 px-4 py-2 text-sm font-semibold text-foreground transition disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             {isLibraryRefreshing ? (
               <>
@@ -8505,7 +8509,7 @@ export function EditorDashboard({
 
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-sm font-semibold text-foreground sm:text-base">
+                      <p className="min-w-0 break-words text-sm font-semibold text-foreground sm:text-base">
                         {asset.originalName}
                       </p>
                       <span className="rounded-full bg-[#111111] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
@@ -8516,29 +8520,29 @@ export function EditorDashboard({
                       </span>
                     </div>
 
-                    <p className="mt-1 truncate text-xs uppercase tracking-[0.14em] text-muted">
+                    <p className="mt-1 break-all text-xs uppercase tracking-[0.14em] text-muted">
                       {asset.metadata?.formatName ?? asset.mimeType}
                     </p>
 
-                    <p className="mt-2 text-sm leading-6 text-muted">
+                    <p className="mt-2 break-words text-sm leading-6 text-muted">
                       {formatAssetSummary(asset)}
                     </p>
                   </div>
 
-                  <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-stretch">
+                  <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-col sm:items-stretch">
                     <button
                       type="button"
                       onClick={() => {
                         void handleOpenMetadataInspection(asset);
                       }}
                       disabled={busyAction === `metadata:${asset.id}`}
-                      className="rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef] disabled:cursor-not-allowed disabled:opacity-60"
+                      className="w-full rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                     >
                       {busyAction === `metadata:${asset.id}` ? "Loading details..." : "Details"}
                     </button>
                     <a
                       href={toApiUrl(asset.downloadUrl)}
-                      className="rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground"
+                      className="w-full rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground sm:w-auto"
                       target="_blank"
                       rel="noreferrer"
                     >
@@ -8551,7 +8555,7 @@ export function EditorDashboard({
                           void handleRegenerateThumbnail(asset);
                         }}
                         disabled={busyAction === `thumbnail:${asset.id}`}
-                        className="rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef] disabled:cursor-not-allowed disabled:opacity-60"
+                        className="w-full rounded-full border border-panel-border bg-white px-4 py-2 text-center text-sm font-semibold text-foreground transition hover:bg-[#f8f5ef] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                       >
                         {busyAction === `thumbnail:${asset.id}`
                           ? "Refreshing preview..."
@@ -8564,7 +8568,7 @@ export function EditorDashboard({
                         void handleDeleteAsset(asset);
                       }}
                       disabled={busyAction === `delete:${asset.id}`}
-                      className="rounded-full border border-[#efc6b2] bg-[#fff1ea] px-4 py-2 text-sm font-semibold text-[#8f3b13] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="w-full rounded-full border border-[#efc6b2] bg-[#fff1ea] px-4 py-2 text-sm font-semibold text-[#8f3b13] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                     >
                       {busyAction === `delete:${asset.id}` ? "Deleting..." : "Delete"}
                     </button>

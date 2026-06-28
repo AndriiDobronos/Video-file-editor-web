@@ -32,8 +32,11 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <header className="sticky top-0 z-30 border-b border-panel-border bg-[rgba(244,239,228,0.88)] backdrop-blur-xl">
-          <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-5 py-4 sm:px-8 lg:px-10">
-            <Link href="/" className="font-display text-lg font-semibold tracking-tight text-foreground">
+          <div className="mx-auto flex w-full max-w-7xl flex-col items-start gap-3 px-5 py-4 sm:px-8 md:flex-row md:items-center md:justify-between lg:px-10">
+            <Link
+              href="/"
+              className="font-display text-base font-semibold leading-tight tracking-tight text-foreground sm:text-lg"
+            >
               Video File Editor
             </Link>
 
