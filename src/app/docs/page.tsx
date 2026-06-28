@@ -97,7 +97,8 @@ export default function DocsPage() {
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
             href="/"
-            className="rounded-full bg-foreground px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 sm:px-5"
+            className="inline-flex items-center justify-center rounded-full bg-foreground px-4 py-3 text-sm font-semibold transition hover:opacity-90 sm:px-5"
+            style={{ color: "#f8f5ef" }}
           >
             Open workspace
           </Link>
