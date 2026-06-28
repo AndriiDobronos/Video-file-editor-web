@@ -6812,11 +6812,13 @@ export function EditorDashboard({
               <p className="text-xs uppercase tracking-[0.16em] text-muted">Imported SRT</p>
               {subtitleFileName ? (
                 <div className="mt-3 space-y-2">
-                  <p className="truncate text-sm font-semibold text-foreground">
+                  <p className="break-all text-sm font-semibold text-foreground">
                     {subtitleFileName}
                   </p>
                   <p className="text-sm leading-6 text-muted">
-                    {subtitleCueCount} cue{subtitleCueCount === 1 ? "" : "s"} detected
+                    {subtitleCueCount === 1
+                      ? tf("{count} subtitle cue detected", { count: subtitleCueCount })
+                      : tf("{count} subtitle cues detected", { count: subtitleCueCount })}
                   </p>
                   <button
                     type="button"
@@ -6845,7 +6847,7 @@ export function EditorDashboard({
                 setSubtitleContent(event.target.value);
               }}
               rows={8}
-              placeholder="Imported .srt content will appear here."
+              placeholder={t("Imported .srt content will appear here.")}
               className="min-h-[12rem] rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
             />
           </label>
@@ -6933,10 +6935,10 @@ export function EditorDashboard({
             <div className="rounded-[1.4rem] border border-panel-border bg-white/78 p-4">
               <p className="text-xs uppercase tracking-[0.16em] text-muted">Selected video</p>
               {selectedSubtitleBurnInAsset ? (
-                <div className="mt-3 flex items-center gap-3">
+                <div className="mt-3 flex min-w-0 items-start gap-3">
                   <AssetThumbnail asset={selectedSubtitleBurnInAsset} compact />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-foreground">
+                  <div className="min-w-0 flex-1">
+                    <p className="break-all text-sm font-semibold text-foreground">
                       {selectedSubtitleBurnInAsset.originalName}
                     </p>
                     <p className="mt-1 text-xs leading-5 text-muted">
@@ -7084,10 +7086,10 @@ export function EditorDashboard({
             <div className="rounded-[1.4rem] border border-panel-border bg-white/78 p-3">
               <p className="text-xs uppercase tracking-[0.16em] text-muted">Clip A</p>
               {selectedTransitionPrimaryAsset ? (
-                <div className="mt-3 flex items-center gap-3">
+                <div className="mt-3 flex min-w-0 items-start gap-3">
                   <AssetThumbnail asset={selectedTransitionPrimaryAsset} compact />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-foreground">
+                  <div className="min-w-0 flex-1">
+                    <p className="break-all text-sm font-semibold text-foreground">
                       {selectedTransitionPrimaryAsset.originalName}
                     </p>
                     <p className="mt-1 text-xs leading-5 text-muted">
@@ -7103,10 +7105,10 @@ export function EditorDashboard({
             <div className="rounded-[1.4rem] border border-panel-border bg-white/78 p-3">
               <p className="text-xs uppercase tracking-[0.16em] text-muted">Clip B</p>
               {selectedTransitionSecondaryAsset ? (
-                <div className="mt-3 flex items-center gap-3">
+                <div className="mt-3 flex min-w-0 items-start gap-3">
                   <AssetThumbnail asset={selectedTransitionSecondaryAsset} compact />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-foreground">
+                  <div className="min-w-0 flex-1">
+                    <p className="break-all text-sm font-semibold text-foreground">
                       {selectedTransitionSecondaryAsset.originalName}
                     </p>
                     <p className="mt-1 text-xs leading-5 text-muted">

@@ -335,6 +335,282 @@ export const ukMessages: Record<string, string> = {
   "End time (seconds)": "Кінцевий час (секунди)",
   "Queueing trim...": "Додавання обрізання в чергу...",
   "Queue trim job": "Додати обрізання в чергу",
+  "Compress function": "Функція стиснення",
+  "Shrink one video or transcode it into a cleaner export":
+    "Стисніть одне відео або перекодуйте його в чистіший експорт",
+  "Animation export function": "Функція експорту анімації",
+  "Turn one short video moment into a GIF or animated WebP":
+    "Перетворіть короткий момент відео на GIF або анімований WebP",
+  "Extract frame function": "Функція витягування кадру",
+  "Capture one still frame from a video clip":
+    "Захопіть один статичний кадр із відеокліпу",
+  "Extract audio function": "Функція витягування аудіо",
+  "Pull the soundtrack out of one video clip":
+    "Витягніть звукову доріжку з одного відеокліпу",
+  "Audio track function": "Функція роботи з аудіодоріжкою",
+  "Mute a video or replace its soundtrack":
+    "Вимкніть звук у відео або замініть його доріжку",
+  "Change speed function": "Функція зміни швидкості",
+  "Speed up or slow down video and audio files":
+    "Прискорюйте або сповільнюйте відео й аудіофайли",
+  "Audio volume function": "Функція гучності аудіо",
+  "Raise, lower, or mute the soundtrack":
+    "Підвищуйте, знижуйте або вимикайте звукову доріжку",
+  "Text overlay function": "Функція тексту поверх відео",
+  "Burn one title or caption directly into a video":
+    "Вшивайте один заголовок або підпис прямо у відео",
+  "Subtitle burn-in function": "Функція вшивання субтитрів",
+  "Import one .srt file and burn timed subtitles into a video":
+    "Імпортуйте один .srt файл і вшивайте таймовані субтитри у відео",
+  "Transition merge function": "Функція склейки з переходом",
+  "Overlap two clips and blend the cut":
+    "Накладіть два кліпи й змішайте перехід між ними",
+  "Merge function": "Функція склейки",
+  "Combine prepared clips into one final video":
+    "Об’єднайте підготовлені кліпи в одне фінальне відео",
+  "Normalize function": "Функція нормалізації",
+  "Align clips before you merge them":
+    "Вирівняйте кліпи перед склейкою",
+  "Crop / pad function": "Функція crop / pad",
+  "Tighten the frame or place it on a larger canvas":
+    "Обріжте кадр щільніше або розмістіть його на більшій канві",
+  "Convert function": "Функція конвертації",
+  "Convert PNG, JPEG, and WebP files": "Конвертуйте PNG, JPEG і WebP файли",
+  "Watch processing and download finished outputs":
+    "Стежте за обробкою та завантажуйте готові результати",
+  "Queue compress job": "Додати стиснення в чергу",
+  "Queue GIF / WebP export job": "Додати експорт GIF / WebP у чергу",
+  "Queue extract frame job": "Додати витягування кадру в чергу",
+  "Queue extract audio job": "Додати витягування аудіо в чергу",
+  "Queue audio track job": "Додати зміну аудіодоріжки в чергу",
+  "Queue speed change job": "Додати зміну швидкості в чергу",
+  "Queue audio volume job": "Додати зміну гучності в чергу",
+  "Queue text overlay job": "Додати текст поверх відео в чергу",
+  "Queue subtitle burn-in job": "Додати вшивання субтитрів у чергу",
+  "Queue transition merge job": "Додати склейку з переходом у чергу",
+  "Queue merge job": "Додати склейку в чергу",
+  "Queue crop / pad job": "Додати crop / pad у чергу",
+  "Queue convert job": "Додати конвертацію в чергу",
+  "Queueing compression...": "Додавання стиснення в чергу...",
+  "Queueing animation export...": "Додавання експорту анімації в чергу...",
+  "Queueing frame extraction...": "Додавання витягування кадру в чергу...",
+  "Queueing audio extraction...": "Додавання витягування аудіо в чергу...",
+  "Queueing audio track edit...": "Додавання зміни аудіодоріжки в чергу...",
+  "Queueing speed change...": "Додавання зміни швидкості в чергу...",
+  "Queueing audio volume...": "Додавання зміни гучності в чергу...",
+  "Queueing text overlay...": "Додавання тексту поверх відео в чергу...",
+  "Queueing subtitle burn-in...": "Додавання вшивання субтитрів у чергу...",
+  "Queueing transition merge...": "Додавання склейки з переходом у чергу...",
+  "Queueing merge...": "Додавання склейки в чергу...",
+  "Queueing normalize...": "Додавання нормалізації в чергу...",
+  "Queueing crop / pad...": "Додавання crop / pad у чергу...",
+  "Queueing convert...": "Додавання конвертації в чергу...",
+  "Upload a video clip to enable trim.": "Завантажте відеокліп, щоб увімкнути обрізання.",
+  "Upload a video clip to enable compression.":
+    "Завантажте відеокліп, щоб увімкнути стиснення.",
+  "Upload a video clip to enable GIF or animated WebP export.":
+    "Завантажте відеокліп, щоб увімкнути експорт GIF або анімованого WebP.",
+  "Upload a video clip to enable frame extraction.":
+    "Завантажте відеокліп, щоб увімкнути витягування кадру.",
+  "Upload a video that already contains audio to enable audio extraction.":
+    "Завантажте відео, яке вже містить аудіо, щоб увімкнути витягування звуку.",
+  "Upload a video clip to enable soundtrack editing.":
+    "Завантажте відеокліп, щоб увімкнути редагування доріжки.",
+  "Upload a video clip or audio file to enable playback speed changes.":
+    "Завантажте відеокліп або аудіофайл, щоб увімкнути зміну швидкості відтворення.",
+  "Upload a video or audio file with sound to enable audio volume adjustments.":
+    "Завантажте відео або аудіофайл зі звуком, щоб увімкнути зміну гучності.",
+  "Upload a video clip to enable text overlay.":
+    "Завантажте відеокліп, щоб увімкнути текст поверх відео.",
+  "Upload a video clip to enable subtitle burn-in.":
+    "Завантажте відеокліп, щоб увімкнути вшивання субтитрів.",
+  "Upload at least two video clips to enable transition merge.":
+    "Завантажте щонайменше два відеокліпи, щоб увімкнути склейку з переходом.",
+  "Upload at least two video clips to enable merge.":
+    "Завантажте щонайменше два відеокліпи, щоб увімкнути склейку.",
+  "Upload a video clip or supported image to enable crop / pad.":
+    "Завантажте відеокліп або підтримуване зображення, щоб увімкнути crop / pad.",
+  "Upload PNG, JPEG, or WebP files to enable image conversion.":
+    "Завантажте PNG, JPEG або WebP файли, щоб увімкнути конвертацію зображень.",
+  "Choose a preset workflow or tune compression settings yourself.":
+    "Оберіть готовий сценарій або налаштуйте параметри стиснення вручну.",
+  "Choose how aggressively the file should be compressed.":
+    "Оберіть, наскільки агресивно слід стискати файл.",
+  "Choose how the extracted soundtrack should be exported.":
+    "Оберіть, як потрібно експортувати витягнуту звукову доріжку.",
+  "Choose whether the next export should be silent or use a new soundtrack.":
+    "Оберіть, чи має наступний експорт бути без звуку, чи з новою доріжкою.",
+  "Choose how the selected clips should be aligned before merge.":
+    "Оберіть, як вирівняти вибрані кліпи перед merge.",
+  "Choose whether to remove frame edges or add canvas space.":
+    "Оберіть, чи прибрати краї кадру, чи додати простір канви.",
+  "Choose how one clip should hand off to the next.":
+    "Оберіть, як один кліп має передаватися до наступного.",
+  "Choose whether audio should fade together or switch abruptly.":
+    "Оберіть, чи звук має плавно змішуватися, чи перемикатися різко.",
+  "Choose a video": "Оберіть відео",
+  "Choose audio": "Оберіть аудіо",
+  "Choose media": "Оберіть медіа",
+  "Choose an image": "Оберіть зображення",
+  "Choose a file": "Оберіть файл",
+  "Compression mode": "Режим стиснення",
+  "Audio format": "Формат аудіо",
+  "Audio mode": "Режим аудіо",
+  "Video with audio": "Відео з аудіо",
+  "Create a short looping preview clip from one video source.":
+    "Створіть коротке зациклене прев’ю з одного відеоджерела.",
+  "Simple": "Простий",
+  "Advanced": "Розширений",
+  "High quality": "Висока якість",
+  "Small file": "Малий файл",
+  "Very fast": "Дуже швидко",
+  "Medium": "Середньо",
+  "Slow": "Повільно",
+  "Animated WebP": "Анімований WebP",
+  "Contain": "Вписати",
+  "Cover": "Заповнити",
+  "Stretch": "Розтягнути",
+  "Mute audio": "Вимкнути звук",
+  "Replace audio": "Замінити звук",
+  "Mute": "Вимкнути звук",
+  "Crossfade": "Кросфейд",
+  "Fade through black": "Згасання через чорний",
+  "Crossfade audio": "Кросфейд аудіо",
+  "Hard cut audio": "Різке перемикання аудіо",
+  "Crop": "Обрізати",
+  "Pad": "Додати поля",
+  "Left": "Ліворуч",
+  "Center": "По центру",
+  "Right": "Праворуч",
+  "Top": "Вгорі",
+  "Bottom": "Внизу",
+  "Bottom center": "Внизу по центру",
+  "Bottom left": "Внизу ліворуч",
+  "Bottom right": "Внизу праворуч",
+  "Top center": "Вгорі по центру",
+  "Pick a ready-made compression profile and export quickly.":
+    "Оберіть готовий профіль стиснення і швидко експортуйте.",
+  "Tune CRF, bitrate, and encoder preset yourself.":
+    "Налаштуйте CRF, бітрейт і пресет енкодера вручну.",
+  "Larger file, cleaner image, and safer detail retention.":
+    "Більший файл, чистіше зображення та надійніше збереження деталей.",
+  "A practical middle ground for everyday exports.":
+    "Практичний баланс для щоденних експортів.",
+  "Pushes file size lower when delivery weight matters most.":
+    "Максимально зменшує розмір файла, коли вага найважливіша.",
+  "Faster export time with slightly weaker compression efficiency.":
+    "Швидший експорт із трохи слабшою ефективністю стиснення.",
+  "A balanced default between speed and compression efficiency.":
+    "Збалансований варіант між швидкістю та ефективністю стиснення.",
+  "Takes longer but can squeeze file size down more effectively.":
+    "Працює довше, але може ефективніше зменшити розмір файла.",
+  "A widely supported looping preview that is easy to drop into chats and docs.":
+    "Широко підтримуване зациклене прев’ю, яке легко використовувати в чатах і документах.",
+  "A lighter modern preview format that usually stays smaller than GIF.":
+    "Сучасний легший формат прев’ю, який зазвичай менший за GIF.",
+  "Good for crisp graphics and transparent backgrounds.":
+    "Добре підходить для чіткої графіки й прозорого фону.",
+  "Best when you want a smaller photo-friendly output.":
+    "Найкраще підходить, коли потрібен легший результат для фото.",
+  "A modern web format with strong size savings.":
+    "Сучасний вебформат із помітною економією розміру.",
+  "Keep the full image inside the target area.":
+    "Зберегти все зображення всередині цільової області.",
+  "Fill the target area and crop the overflow.":
+    "Заповнити цільову область і обрізати надлишок.",
+  "Force the image to the exact size.":
+    "Примусово підганяти зображення під точний розмір.",
+  "A lightweight choice for voice tracks, music drafts, and general sharing.":
+    "Легкий варіант для голосу, музичних чернеток і звичайного поширення.",
+  "A clean AAC export that stays practical for modern apps and browsers.":
+    "Чистий AAC-експорт, який зручно використовувати в сучасних застосунках і браузерах.",
+  "A larger uncompressed output when you want easier handoff to audio tools.":
+    "Більший нестиснений результат, коли потрібна зручніша передача в аудіоінструменти.",
+  "Keep the picture and export the video without any soundtrack.":
+    "Зберегти зображення й експортувати відео без жодної звукової доріжки.",
+  "Swap the current soundtrack for another uploaded audio source.":
+    "Замінити поточну звукову доріжку на інше завантажене аудіоджерело.",
+  "Blend the outgoing clip directly into the incoming clip.":
+    "Плавно змішати вихідний кліп із вхідним кліпом.",
+  "Dip through black during the handoff for a more cinematic break.":
+    "Провести перехід через чорний для більш кінематографічного розриву.",
+  "Fade the outgoing soundtrack into the incoming one across the overlap.":
+    "Плавно змішати вихідну доріжку з вхідною в зоні накладання.",
+  "Switch the soundtrack at the transition point without fading the audio.":
+    "Перемкнути доріжку в точці переходу без плавного згасання аудіо.",
+  "Remove frame edges and keep only the selected inner area.":
+    "Прибрати краї кадру й залишити лише вибрану внутрішню область.",
+  "Place the source on a larger canvas without scaling it first.":
+    "Розмістити джерело на більшій канві без попереднього масштабування.",
+  "Import subtitle file (.srt)": "Імпортувати файл субтитрів (.srt)",
+  "Imported SRT": "Імпортований SRT",
+  "{count} subtitle cue detected": "Виявлено {count} репліку субтитрів",
+  "{count} subtitle cues detected": "Виявлено {count} реплік субтитрів",
+  "{count} cue{suffix} detected": "{count} cue{suffix} detected",
+  "Clear SRT": "Очистити SRT",
+  "Import one UTF-8 `.srt` file to load the subtitle timing and text.":
+    "Імпортуйте один UTF-8 `.srt` файл, щоб завантажити таймінг і текст субтитрів.",
+  "Imported .srt content will appear here.":
+    "Тут з’явиться вміст імпортованого .srt файла.",
+  "Subtitle preview": "Попередній перегляд субтитрів",
+  "Font size": "Розмір шрифту",
+  "Alignment": "Вирівнювання",
+  "Font color": "Колір шрифту",
+  "Outline color": "Колір обведення",
+  "Distance from top or bottom edge": "Відстань від верхнього або нижнього краю",
+  "Selected video": "Вибране відео",
+  "Choose the video that should receive subtitles.":
+    "Оберіть відео, у яке потрібно вшити субтитри.",
+  "Burn-in summary": "Підсумок вшивання",
+  "The `.srt` file controls when each subtitle appears. This page controls how the subtitles look in the final video export.":
+    "Файл `.srt` керує тим, коли з’являється кожен субтитр. Ця сторінка керує тим, як субтитри виглядатимуть у фінальному відеоекспорті.",
+  "Importing subtitles...": "Імпорт субтитрів...",
+  "Clip A": "Кліп A",
+  "Clip B": "Кліп B",
+  "Swap order": "Поміняти порядок",
+  "Choose the outgoing clip.": "Оберіть вихідний кліп.",
+  "Choose the incoming clip.": "Оберіть вхідний кліп.",
+  "Transition merge works best after the selected clips share one format.":
+    "Склейка з переходом працює найкраще, коли вибрані кліпи мають один формат.",
+  "Toggle transition merge details": "Показати або сховати деталі склейки з переходом",
+  "Normalize the clips first so resolution, frame rate, and audio timing stay aligned during the overlap.":
+    "Спочатку нормалізуйте кліпи, щоб роздільність, частота кадрів і таймінг аудіо залишалися вирівняними під час накладання.",
+  "Open normalize page": "Відкрити сторінку нормалізації",
+  "Visual transition": "Візуальний перехід",
+  "Audio transition": "Аудіоперехід",
+  "Overlap duration (seconds)": "Тривалість накладання (секунди)",
+  "Output summary": "Підсумок результату",
+  Tip: "Порада",
+  "Use Audio Volume first if one clip sounds noticeably louder than the other.":
+    "Спочатку скористайтеся Audio Volume, якщо один кліп звучить помітно голосніше за інший.",
+  "Merge is blocked until the selected clips share one format.":
+    "Склейка заблокована, доки вибрані кліпи не матимуть один формат.",
+  "Toggle merge details": "Показати або сховати деталі склейки",
+  "Open the dedicated Normalize page to align resolution, codecs, frame rate, and audio settings before merging.":
+    "Відкрийте окрему сторінку Normalize, щоб вирівняти роздільність, кодеки, частоту кадрів і налаштування аудіо перед склейкою.",
+  "Normalize selected clips": "Нормалізувати вибрані кліпи",
+  "Output format": "Формат результату",
+  "Fit mode": "Режим вписування",
+  "Width (optional)": "Ширина (необов’язково)",
+  "Height (optional)": "Висота (необов’язково)",
+  "Quality (1-100)": "Якість (1-100)",
+  "Background for JPEG or padded images": "Фон для JPEG або зображень із полями",
+  Source: "Джерело",
+  "Target summary": "Підсумок цілі",
+  "Horizontal anchor": "Горизонтальна прив’язка",
+  "Vertical anchor": "Вертикальна прив’язка",
+  "Background color": "Колір фону",
+  "Output rule": "Правило результату",
+  "File type": "Тип файла",
+  Video: "Відео",
+  Image: "Зображення",
+  Unavailable: "Недоступно",
+  "Video outputs stay MP4/H.264/AAC, so width and height should use even numbers.":
+    "Відеорезультати залишаються у форматі MP4/H.264/AAC, тому ширина й висота мають бути парними числами.",
+  "Image outputs keep the original format. Use Convert when you also need PNG, JPEG, or WebP format switching.":
+    "Результати для зображень зберігають оригінальний формат. Використовуйте Convert, коли також потрібно перемикати PNG, JPEG або WebP.",
+  "Mute enabled": "Вимкнення звуку увімкнено",
+  "Muted export": "Експорт без звуку",
   "Summary is unavailable.": "Короткий підсумок недоступний.",
   Selected: "Вибрано",
   preview: "прев’ю",
