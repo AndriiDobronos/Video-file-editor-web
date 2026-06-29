@@ -783,6 +783,28 @@ function getSuggestedTrimEndTime(asset: MediaAsset | undefined) {
   return String(Number(Math.min(5, Math.max(1, duration)).toFixed(2)));
 }
 
+function truncateMiddle(value: string, maxLength: number) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  const visibleCharacters = Math.max(4, maxLength - 3);
+  const startLength = Math.ceil(visibleCharacters / 2);
+  const endLength = Math.floor(visibleCharacters / 2);
+
+  return `${value.slice(0, startLength)}...${value.slice(value.length - endLength)}`;
+}
+
+function formatCompactAssetOptionLabel(asset: MediaAsset, index: number) {
+  return `${index + 1}. ${truncateMiddle(asset.originalName, 34)}`;
+}
+
+function getAssetCollectionSignature(nextAssets: MediaAsset[]) {
+  return nextAssets
+    .map((asset) => `${asset.id}:${asset.kind}:${asset.createdAt}:${asset.originalName}`)
+    .join("|");
+}
+
 function getMergeCompatibilityIssues(selectedAssets: MediaAsset[]) {
   if (selectedAssets.length < 2) {
     return [];
@@ -2513,6 +2535,34 @@ function getAssetLibraryScope(
   };
 }
 
+function getAssetLibrarySignatureForView(activeView: EditorView, nextAssets: MediaAsset[]) {
+  const nextVideoAssets = nextAssets.filter(isVideoAsset);
+  const nextImageAssets = nextAssets.filter(isImageAsset);
+  const nextCropPadAssets = nextAssets.filter(isCropPadEligibleAsset);
+  const nextVideoWithAudioAssets = nextVideoAssets.filter(hasAudioStream);
+  const nextAudioSourceAssets = nextAssets.filter(hasAudioStream);
+  const nextAudioTrackAssets = mergeUniqueAssets(nextVideoAssets, nextAudioSourceAssets);
+  const nextTimedMediaAssets = nextAssets.filter(isTimedMediaAsset);
+  const nextAudioCapableAssets = nextAssets.filter(hasAudioStream);
+
+  return getAssetCollectionSignature(
+    getAssetLibraryScope(activeView, {
+      assets: nextAssets,
+      videoAssets: nextVideoAssets,
+      imageAssets: nextImageAssets,
+      cropPadAssets: nextCropPadAssets,
+      videoWithAudioAssets: nextVideoWithAudioAssets,
+      audioTrackAssets: nextAudioTrackAssets,
+      timedMediaAssets: nextTimedMediaAssets,
+      audioCapableAssets: nextAudioCapableAssets,
+    }).items,
+  );
+}
+
+function hasActiveJobs(nextJobs: ProcessingJob[]) {
+  return nextJobs.some((job) => job.status === "queued" || job.status === "processing");
+}
+
 function readSessionString(key: string, fallback: string) {
   if (typeof window === "undefined") {
     return fallback;
@@ -2980,6 +3030,7 @@ export function EditorDashboard({
   const assetLibraryEmptyMessage = isWorkspaceInitializing
     ? "Loading the shared library for this page..."
     : assetLibraryScope.emptyMessage;
+  const assetLibrarySignature = getAssetCollectionSignature(assetLibraryAssets);
 
   function applyAssetsSnapshot(nextAssets: MediaAsset[]) {
     startRefreshTransition(() => {
@@ -3200,6 +3251,7 @@ export function EditorDashboard({
   async function loadAssets() {
     const response = await fetchJson<AssetsResponse>("/api/v1/assets");
     applyAssetsSnapshot(response.items);
+    return response.items;
   }
 
   async function loadJobs() {
@@ -3207,6 +3259,7 @@ export function EditorDashboard({
     startRefreshTransition(() => {
       setJobs(response.items);
     });
+    return response.items;
   }
 
   async function ensureBackendReady(message: string) {
@@ -3222,10 +3275,23 @@ export function EditorDashboard({
 
   async function handleRefresh() {
     setIsLibraryRefreshing(true);
+    const baselineSignature = assetLibrarySignature;
 
     try {
       await ensureBackendReady("Refreshing uploads and queue history.");
-      await Promise.all([loadAssets(), loadJobs()]);
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        const [nextAssets, nextJobs] = await Promise.all([loadAssets(), loadJobs()]);
+        const nextSignature = getAssetLibrarySignatureForView(activeView, nextAssets);
+
+        if (nextSignature !== baselineSignature || !hasActiveJobs(nextJobs)) {
+          break;
+        }
+
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 1500);
+        });
+      }
+
       setErrorMessage("");
       setFeedback("Workspace refreshed.");
     } catch (error) {
@@ -3528,7 +3594,7 @@ export function EditorDashboard({
   }, [hasRestoredSession]);
 
   useEffect(() => {
-    if (!hasRestoredSession || !hasProcessingJobs) {
+    if (!hasRestoredSession || !hasProcessingJobs || isLibraryRefreshing) {
       return;
     }
 
@@ -3552,7 +3618,7 @@ export function EditorDashboard({
       isActive = false;
       window.clearInterval(intervalId);
     };
-  }, [hasProcessingJobs, hasRestoredSession, startRefreshTransition]);
+  }, [hasProcessingJobs, hasRestoredSession, isLibraryRefreshing, startRefreshTransition]);
 
   useEffect(() => {
     if (!mergeRequiresNormalization) {
@@ -7015,7 +7081,7 @@ export function EditorDashboard({
         <div className="mt-6 space-y-4">
           {videoAssets.length > 1 ? (
             <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]">
-              <label className="grid gap-2 text-sm font-medium text-foreground">
+              <label className="grid min-w-0 gap-2 text-sm font-medium text-foreground">
                 Clip A
                 <select
                   value={transitionMergePrimaryAssetId}
@@ -7029,11 +7095,11 @@ export function EditorDashboard({
                       );
                     }
                   }}
-                  className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+                  className="w-full min-w-0 rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
                 >
-                  {videoAssets.map((asset) => (
+                  {videoAssets.map((asset, index) => (
                     <option key={asset.id} value={asset.id}>
-                      {asset.originalName}
+                      {formatCompactAssetOptionLabel(asset, index)}
                     </option>
                   ))}
                 </select>
@@ -7052,7 +7118,7 @@ export function EditorDashboard({
                 </button>
               </div>
 
-              <label className="grid gap-2 text-sm font-medium text-foreground">
+              <label className="grid min-w-0 gap-2 text-sm font-medium text-foreground">
                 Clip B
                 <select
                   value={transitionMergeSecondaryAssetId}
@@ -7066,11 +7132,11 @@ export function EditorDashboard({
                       );
                     }
                   }}
-                  className="rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
+                  className="w-full min-w-0 rounded-2xl border border-panel-border bg-white px-4 py-3 text-sm"
                 >
-                  {videoAssets.map((asset) => (
+                  {videoAssets.map((asset, index) => (
                     <option key={asset.id} value={asset.id}>
-                      {asset.originalName}
+                      {formatCompactAssetOptionLabel(asset, index)}
                     </option>
                   ))}
                 </select>
